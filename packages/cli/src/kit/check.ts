@@ -77,7 +77,7 @@ function fakeMainCtx(id: string, config: unknown, registered: string[]) {
   return {
     id,
     config,
-    on: { beforeSend: reg("beforeSend"), turnStart: reg("turnStart"), turnEnd: reg("turnEnd"), taskOpen: reg("taskOpen"), taskClose: reg("taskClose") },
+    on: { beforeSend: reg("beforeSend"), turnStart: reg("turnStart"), turnEnd: reg("turnEnd"), taskOpen: reg("taskOpen"), taskClose: reg("taskClose"), instructions: reg("instructions"), agentTools: reg("agentTools") },
     ipc: (name: string) => reg(`ipc ${name}`)(),
     engine: { run: async () => ({ ok: false, error: "mod check runs no engine" }) },
     tasks: { running: async () => null },

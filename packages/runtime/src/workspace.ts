@@ -179,8 +179,8 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
   const material = opts.material && hasMaterial(harness) ? opts.material : undefined;
   const withMaterial = material ? { material: true } : {};
   const tools = opts.tools && hasTools(harness) ? opts.tools : undefined;
-  const sectionsNow = () => (opts.instructions ? { sections: opts.instructions() } : {});
-  const generated = await writeInstructions({ folder, base, language: opts.language, blocks, references, engine, ...sectionsNow(), ...(settings ? { settings } : {}), ...(linked.length ? { linked } : {}), ...subagents, ...withMaterial });
+  const sectionsNow = async () => (opts.instructions ? { sections: await opts.instructions() } : {});
+  const generated = await writeInstructions({ folder, base, language: opts.language, blocks, references, engine, ...(await sectionsNow()), ...(settings ? { settings } : {}), ...(linked.length ? { linked } : {}), ...subagents, ...withMaterial });
 
   // The history skips the app's files under .harness/ (except the notes, the data and, with material, its registry
   // and decisions) and the generated instructions.
@@ -255,12 +255,14 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
     const ref: SlotRef = { key: o.key };
     const session: Session = o.session ?? { id: randomUUID(), started: false };
     let emitCurrent: ((e: Event) => void) | null = null;
+    // The caller's tools, asked again for each slot when it gives a function: this slot's are these until it closes.
+    const set = step ? undefined : typeof opts.agentTools === "function" ? await opts.agentTools() : opts.agentTools;
     const bridge: Bridge = await openBridge((m) => emitCurrent?.({ type: "block", name: m.name, data: m.data }));
     let rpc: Rpc | null = null;
     let materialRpc: Rpc | null = null;
     let agentRpc: Rpc | null = null;
     // The caller's tools this slot gets: a task's, all of them; a job's, those that are not `tasksOnly`; a step's, none.
-    const offered = step ? [] : (opts.agentTools?.definitions.filter((d) => !(o.kind === "job" && d.tasksOnly)) ?? []);
+    const offered = set?.definitions.filter((d) => !(o.kind === "job" && d.tasksOnly)) ?? [];
     let toolsRpc: Rpc | null = null;
     try {
       const data = opts.data;
@@ -268,7 +270,7 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
       if (!step && material) materialRpc = await openRpc((r) => material.request(r, ref));
       // Task and job slots alike (Decision 9): a job's agent may call the tools too.
       if (!step && tools) toolsRpc = await openRpc((r) => tools.request(r, ref));
-      if (opts.agentTools && offered.length > 0) agentRpc = await openRpc(offeredHandler(opts.agentTools, new Set(offered.map((d) => d.name))));
+      if (set && offered.length > 0) agentRpc = await openRpc(offeredHandler(set, new Set(offered.map((d) => d.name))));
     } catch (err) {
       await toolsRpc?.close().catch(() => {});
       await agentRpc?.close().catch(() => {});
@@ -579,7 +581,9 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
         if (ledger.anyRunning()) return false;
         const nowSubagents = await subagentsNow();
         if (ledger.anyRunning()) return false;
-        const write = refreshInstructions({ folder, base, language: opts.language, blocks, references, ...sectionsNow(), ...(now ? { settings: now } : {}), ...(nowLinked.length ? { linked: nowLinked } : {}), ...nowSubagents, ...withMaterial });
+        const nowSections = await sectionsNow();
+        if (ledger.anyRunning()) return false;
+        const write = refreshInstructions({ folder, base, language: opts.language, blocks, references, ...nowSections, ...(now ? { settings: now } : {}), ...(nowLinked.length ? { linked: nowLinked } : {}), ...nowSubagents, ...withMaterial });
         writing = write;
         try {
           return await write;

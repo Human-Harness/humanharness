@@ -133,7 +133,10 @@ export default defineMod({
 - \`main(ctx)\` runs in the app (node). \`ctx\` is a \`MainCtx\`: hooks (\`ctx.on.beforeSend\` answers a \`SendInfo\` with a
   \`SendVerdict\`, which may hold the send until \`ctx.holds.resolve(token, verdict)\` with a \`HoldVerdict\`; \`turnStart\`,
   \`turnEnd\` with a \`TurnEndInfo\`, \`taskOpen\`, \`taskClose\` with a \`TaskRef\`, \`betweenTasks\`, \`phaseMoved\` with a
-  \`PhaseMovedInfo\`, \`daily\` with a \`DailyInfo\`, \`close\` when the app quits), \`ipc\`, \`engine.run(tier, prompt)\` (a
+  \`PhaseMovedInfo\`, \`daily\` with a \`DailyInfo\`, \`close\` when the app quits; for the agent, given an \`AgentInfo\`,
+  \`ctx.on.instructions?.(fn)\` answers lines added to its instructions as one section, and \`ctx.on.agentTools?.(fn)\` answers
+  \`AgentTool\`s for its \`ui\` server: \`name\`, \`description\`, a JSON-schema \`inputSchema\`, \`handle(args)\` and an optional
+  \`tasksOnly\`), \`ipc\`, \`engine.run(tier, prompt)\` (a
   \`Tier\`: light, standard or deep; an \`EngineRunResult\` back), \`tasks\`, \`notes\`, \`storage\`, \`stores.open(name,
   collection)\` (a \`ModStore\`), \`usage.record(kind, entry)\` (a \`UsageEntry\` with \`ModTokens\`) and \`usage.summary()\`
   (a \`UsageSummary\`), \`focus.set(taskId, on)\`, \`dataDir\`, \`notify\`, \`provide\`, \`mods\`, \`log\`. Every registration returns a \`Disposer\`; the app runs

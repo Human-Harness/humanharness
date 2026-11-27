@@ -224,6 +224,25 @@ declare module "@humanharness/mod-sdk/_internal/src/types" {
       text: string;
       error?: string;
   }
+  /** What the agent hooks are told about the harness the agent works in. */
+  export interface AgentInfo {
+      /** The agent may edit the work folder. */
+      canEdit: boolean;
+  }
+  /** A tool the mod adds to the agent's `ui` server, beside the harness's blocks. */
+  export interface AgentTool {
+      /** What the agent calls: letters, digits, `_` and `-`; never a block's, the app's or an earlier mod's tool name. */
+      name: string;
+      description: string;
+      /** The arguments' JSON Schema, of `type: "object"`, in the subset a plugin's schemas take. Undeclared keys are dropped. */
+      inputSchema: Record<string, unknown>;
+      /** Only in a task's session: a background job can't ask the person. */
+      tasksOnly?: boolean;
+      /** What the agent reads when the app does not answer in time. */
+      timeoutError?: string;
+      /** Answers a call: the agent reads the result as JSON; a thrown error's message reaches it as it is. */
+      handle(args: Record<string, unknown>): unknown;
+  }
   export interface MainCtx<C = undefined> {
       readonly id: string;
       /** The harness's `mods.<id>`, parsed by the mod's schema; undefined without a schema. */
@@ -241,6 +260,14 @@ declare module "@humanharness/mod-sdk/_internal/src/types" {
           daily(fn: (d: DailyInfo) => void | Promise<void>): Disposer;
           /** The app is quitting; before the disposers run. */
           close(fn: () => void | Promise<void>): Disposer;
+          /**
+           * Lines added to the agent's instructions (AGENTS.md) as one section after the app's own, in mod order; [] adds
+           * none. Asked each time the instructions are written. The app always gives it, and `agentTools`; a ctx made only
+           * to check or test a mod may not.
+           */
+          instructions?(fn: (o: AgentInfo) => string[] | Promise<string[]>): Disposer;
+          /** Tools added to the agent's `ui` server; asked each time an agent session is opened. */
+          agentTools?(fn: (o: AgentInfo) => AgentTool[] | Promise<AgentTool[]>): Disposer;
       };
       /**
        * A channel the mod's own ui calls (0b wires the ui side). A core mod may also name an app channel (`hh:…`): the
@@ -993,6 +1020,8 @@ declare module "@humanharness/ui/_internal/src/layout/app" {
       };
   }
   export const AppProvider: import("react").Provider<AppValue | null>;
+  /** The app when there is one: a task view drawn on its own (a setup step, a test) has none. */
+  export const useOptionalApp: () => AppValue | null;
   /** The app, for the layout and its blocks. */
   export function useApp(): AppValue;
 }

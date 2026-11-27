@@ -9,9 +9,11 @@ async function host() {
   return h;
 }
 
-// The reader's five are the documents mod's. The context panel's seven and search's two left the app channels for their
-// mods' own ipc (context-cleanup, search-cleanup).
+// The reader's five and reviews' nine are the documents mod's. The context panel's seven and search's two left the app
+// channels for their mods' own ipc (context-cleanup, search-cleanup).
 const READER = ["hh:readDocument", "hh:readImage", "hh:documentsExist", "hh:watchDocument", "hh:unwatchDocument"];
+const WRITES = ["Answer", "Comment", "EditDraft", "Reopen", "Send", "Approve", "ApprovedText"].map((n) => `hh:review${n}`);
+const ALL = [...READER, "hh:reviewView", "hh:reviewSummaries", ...WRITES];
 
 function wired(h: ModHost) {
   const ipc = new Map<string, (sender: { id: number }, ...args: unknown[]) => unknown>();
@@ -20,12 +22,12 @@ function wired(h: ModHost) {
 }
 
 describe("app channels a core mod answers", () => {
-  it("lists the reader's channels, and registers each", async () => {
+  it("lists the reader's and reviews' channels, and registers each", async () => {
     const h = await host();
     const handle = vi.fn();
-    expect(MOD_APP_CHANNELS).toEqual(READER);
+    expect(MOD_APP_CHANNELS).toEqual(ALL);
     registerModAppChannels(handle, () => h);
-    expect(handle.mock.calls.map(([channel]) => channel)).toEqual(READER);
+    expect(handle.mock.calls.map(([channel]) => channel)).toEqual(ALL);
   });
 
   it("with the mod off, answers each in the shape its caller handles", async () => {
@@ -36,6 +38,9 @@ describe("app channels a core mod answers", () => {
     expect(await call("hh:documentsExist", "a.md")).toEqual([]);
     expect(await call("hh:watchDocument", "a.md")).toBeNull();
     expect(await call("hh:unwatchDocument", 1)).toBeUndefined();
+    for (const channel of ["hh:reviewView", ...WRITES]) expect(await call(channel, "a.md"), channel).toEqual({ ok: false, reason: "not-ready" });
+    expect(await call("hh:reviewSummaries", ["a.md", "b.md"])).toEqual([null, null]);
+    expect(await call("hh:reviewSummaries", "a.md")).toEqual([]);
   });
 
   it("refuses a channel that is not listed, so the former search channels are not reachable through `handle`", async () => {

@@ -104,7 +104,7 @@ The window sends the selection's own text (`Selection.toString()`), which puts l
   - `resolve: true` resolves the item, `false` keeps it `open` (the agent asks something back).
 - `read_review({ path })`: the comments and questions not resolved and not drafts, with their answers and their state (`lost` worked out from the text), and the document's status (`none`, `draft`, `approved`, `stale`).
 
-The `ui` bridge only answers "ok", so these tools use a request/answer channel of their own: an `Rpc` like the `data` server's. It is the runtime's channel for any tool its caller adds (`agentTools`: definitions with a JSON Schema, `tasksOnly`, one handler). The socket, the token and the definitions reach the server as `HH_TOOLS_RPC`, `HH_TOOLS_RPC_TOKEN` and `HH_TOOLS_RPC_DEFS`, and each call is `{ tool, args }`. `reviewAgent` (`packages/runtime/src/review-agent.ts`) builds the three tools and the writing guide for the shell and the CLI, and turns a call into a request. Each request goes to `runReviewRequest` (`packages/workspace/src/review-requests.ts`).
+The `ui` bridge only answers "ok", so these tools use a request/answer channel of their own: an `Rpc` like the `data` server's. It is the runtime's channel for any tool its caller adds (`agentTools`: definitions with a JSON Schema, `tasksOnly`, one handler). The socket, the token and the definitions reach the server as `HH_TOOLS_RPC`, `HH_TOOLS_RPC_TOKEN` and `HH_TOOLS_RPC_DEFS`, and each call is `{ tool, args }`. The documents mod (`packages/mods/documents/src/main/agent.ts`) gives the three tools and the writing guide, in the shell and in `humanharness run`, and turns a call into a request. Each request goes to `runReviewRequest` (`packages/workspace/src/review-requests.ts`).
 
 `reviewAgent` gives the tools only when it gets a `review` handler and the agent may edit the folder, and the runtime opens the channel only for a slot offered a tool (never a step's; a job's only for tools that are not `tasksOnly`). Its `reviewHandler` passes the agent only a `ReviewRefused` message. Any other failure (a file system error that names paths) becomes "The app could not do that. Nothing was saved; do not retry in a loop." A timeout says "The app did not answer; check with read_review before asking again".
 
@@ -129,7 +129,7 @@ With the tools, `AGENTS.md`'s "Writing for the reader" part gets three more line
 
 ## The person's side
 
-`ReviewService` (`packages/shell/src/main/reviews.ts`) does the person's side. The window reaches it through the `hh:review*` channels (`review-ipc.ts`), and every answer is data (`{ ok: false, reason }`, never a thrown error). Its locks are the same ones the runtime's handler uses (`reviews.agent(base, request)`).
+`ReviewService` (`packages/mods/documents/src/main/reviews.ts`) does the person's side. The window reaches it through the `hh:review*` channels (`review-ipc.ts`), and every answer is data (`{ ok: false, reason }`, never a thrown error). Its locks are the same ones the runtime's handler uses (`reviews.agent(base, request)`).
 
 **Answers (§5.1).**
 
@@ -231,7 +231,7 @@ Every call answers with data, and errors are data too. This differs from the spe
 
 ## Terminal
 
-`humanharness run` gives the agent the same three tools, but only for an edit-folder harness. It has its own `ReviewLocks` and calls `runReviewRequest` directly, since `ReviewService` needs the window.
+`humanharness run` gives the agent the same three tools, but only for an edit-folder harness. It loads the documents mod headless: with no `ctx.app`, the mod has its own `ReviewLocks` and calls `runReviewRequest` directly, since `ReviewService` needs the window.
 
 Under each `Documents: <path> (<change>)` line it prints the document's review, when it has one (`reviewLine` in `packages/cli/src/terminal.ts`):
 
@@ -282,8 +282,8 @@ The tests that hold this: `packages/blocks/test/ui-server.test.ts` (unchanged), 
 
 - `packages/harness-sdk/src/review.ts`, `review-schema.ts`, `index.ts` (`approve`, `reviewTier`), `core-blocks.ts` (`REVIEW_TOOLS` in the reserved names).
 - `packages/workspace/src/reviews.ts` (record files, locks, own documents, `blobId`, `reviewSummarySync`), `review-requests.ts`, `history.ts` (`readBlob`, the kept prefix), `layout.ts` (`REVIEWS_PREFIX`), `instructions.ts`.
-- `packages/blocks/src/ui-server.ts`, `ui-server-bin.ts`, `launch.ts`; `packages/blocks/src/agent-tools.ts`; `packages/runtime/src/runtime.ts` (`instructions`, `agentTools`), `review-agent.ts` (`reviewAgent`, `reviewHandler`).
-- `packages/shell/src/main/reviews.ts`, `review-ipc.ts`, `task-manager.ts` (`reviewRound`, `documentApproved`, `withNotices`), `task-prompts.ts` (`REVIEW_PROMPT`), `task-store.ts` (`notices`), `index.ts`, `packages/shell/src/preload/index.ts`.
+- `packages/blocks/src/ui-server.ts`, `ui-server-bin.ts`, `launch.ts`; `packages/blocks/src/agent-tools.ts`; `packages/runtime/src/runtime.ts` (`instructions`, `agentTools`); `packages/mods/documents/src/main/agent.ts` (`documentsAgent`, `reviewHandler`).
+- `packages/mods/documents/src/main/reviews.ts`, `review-ipc.ts`, `app-reviews.ts`; `packages/shell/src/main/review-round.ts` (`RoundNotStarted`), `task-manager.ts` (`reviewRound`, `documentApproved`, `withNotices`), `task-prompts.ts` (`REVIEW_PROMPT`), `task-store.ts` (`notices`), `index.ts`, `packages/shell/src/preload/index.ts`.
 - `packages/ui/src/review-marks.ts`, `ReviewColumn.tsx`, `ReviewBar.tsx`, `ApprovedDiff.tsx`, `FocusMarkers.tsx`, `focus-notices.ts`, `DocumentReader.tsx`, `DocumentCards.tsx`, `ChatView.tsx`; `packages/protocol/src/{client,views}.ts`.
 - `packages/cli/src/run.ts`, `terminal.ts`.
 - `packages/fake-agent/fixtures/review-harness` (id `reviewer`) and `packages/e2e/tests/review.spec.ts`.

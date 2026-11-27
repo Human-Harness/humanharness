@@ -7,7 +7,7 @@ import * as blocks from "@humanharness/blocks";
 import { getEngine } from "@humanharness/engines";
 import { claudeResultLine, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
 import { loadHarness } from "@humanharness/harness-sdk";
-import { type AgentToolSet, type HarnessWorkspace, type WorkspaceOptions, createWorkspace, reviewAgent } from "../src";
+import { type AgentToolSet, type HarnessWorkspace, type WorkspaceOptions, createWorkspace } from "../src";
 
 /** Each channel's handler, in the order the slots opened them. */
 const opened = vi.hoisted(() => [] as ((request: unknown) => Promise<unknown>)[]);
@@ -103,14 +103,5 @@ describe("the caller's tools", () => {
     const env = await uiEnv("job");
     expect(Object.keys(env).filter((k) => k.startsWith("HH_TOOLS_RPC"))).toEqual([]);
     expect(blocks.openRpc).not.toHaveBeenCalled();
-  });
-});
-
-describe("reviewAgent", () => {
-  it("an `op` among a call's arguments never picks another request", async () => {
-    const seen: unknown[] = [];
-    const { agentTools } = reviewAgent(await loadHarness(FIXTURE), async (r) => void seen.push(r));
-    await agentTools?.handle("read_review", { path: "a.md", op: "ask" });
-    expect(seen).toEqual([{ op: "read", path: "a.md" }]);
   });
 });

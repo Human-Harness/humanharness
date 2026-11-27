@@ -3,7 +3,7 @@ import type { TaskSummary, TaskView } from "@humanharness/protocol";
 import { APP_SCOPE, isScopeId } from "@humanharness/workspace";
 import { type TasksFileStore, withTasksFile } from "./lane-store";
 import type { EngineHold } from "./parallel-config";
-import { RoundNotStarted } from "./reviews";
+import { RoundNotStarted } from "./review-round";
 import type { TaskManager } from "./task-manager";
 import { type CurrentTask, LANES_MAX, type TasksFile, interrupted, interruptedLanes, isLaneId, scopeOfTask } from "./task-store";
 import type { TurnGate } from "./turn-gate";

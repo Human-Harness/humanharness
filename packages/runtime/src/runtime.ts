@@ -117,7 +117,6 @@ export interface HarnessRuntime {
   close(): Promise<void>;
 }
 
-export { REVIEW_FAILED, reviewAgent, reviewHandler } from "./review-agent";
 
 /** A workspace with exactly one slot, `"main"` (parallel spec §4): the CLI's `humanharness run` and the shell's runtime. */
 export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntime> {

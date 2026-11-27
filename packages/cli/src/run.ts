@@ -37,7 +37,7 @@ import {
   settingsValues,
 } from "@humanharness/harness-sdk";
 import { DefaultModelPolicy } from "@humanharness/policies";
-import { type ErrorCode, createRuntime, reviewAgent } from "@humanharness/runtime";
+import { type ErrorCode, createRuntime } from "@humanharness/runtime";
 import {
   ChatLog,
   type CommandDeps,
@@ -66,7 +66,6 @@ import {
   DataError,
   DataStore,
   MAIN_SCOPE,
-  ReviewLocks,
   buildDataContextParts,
   ScopeStore,
   generatedFiles,
@@ -74,7 +73,6 @@ import {
   notesPrefix,
   readNotes,
   reviewSummarySync,
-  runReviewRequest,
   writeNote,
 } from "@humanharness/workspace";
 import { CliError, type Io, UsageError, parseCommand } from "./cli";
@@ -347,18 +345,13 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
   const instructionSettings = async (settings: HarnessSettings) =>
     settingsSentences(settings, settingsValues(settings, await dataStore.get(SETTINGS_COLLECTION, undefined, person).catch(() => null)));
 
-  // The run is the folder's only review writer in this process (the window isn't there): its own locks.
-  const reviewLocks = new ReviewLocks();
-  const openTask = async () => {
+  const warn = (text: string) => void out.write(`Warning: ${text}\n`);
+  // The open task, as a mod reads it (the documents mod stamps it on a review it starts). `tasks` exists by then.
+  const running = async () => {
     const t = await tasks.runningTask();
     return t ? { id: t.id, scope: t.scope } : null;
   };
-
-  const warn = (text: string) => void out.write(`Warning: ${text}\n`);
-  const mods = await startRunMods({ harness, folder, warn, ...(o.coreMods ? { coreMods: o.coreMods } : {}) });
-  // The writing guide, and the review tools (review spec §4) as the app's ReviewService.agent runs them: one set of
-  // locks for the run, keyed on the canonical path by `runReviewRequest`. Tools only when the agent may edit (D0).
-  const coreAgent = reviewAgent(harness, (request) => runReviewRequest({ base: folder, locks: reviewLocks, task: openTask }, request));
+  const mods = await startRunMods({ harness, folder, warn, running, ...(o.coreMods ? { coreMods: o.coreMods } : {}) });
 
   // Same wiring as the app's main process (packages/shell/src/main/index.ts), with the terminal as the window.
   const runtime = memoise(() =>
@@ -373,8 +366,8 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
       references: references.map((r) => ({ label: r.label, path: r.path })),
       onSession: (s) => void tasks.sessionStarted(s).catch(() => undefined),
       data: (request) => agentDataRequest({ store: async () => dataStore, runningTask: () => tasks.runningTask() }, request),
-      // Then the mods' sections and tools, as in the app.
-      ...withModAgent(coreAgent, harness, () => mods),
+      // The mods' sections and tools, as in the app: the writing guide and the review tools are the documents mod's.
+      ...withModAgent(harness, folder, () => mods),
       // The harness's settings, as the app writes them (harness-settings spec §5). Absent without settings (D0).
       ...(harness.settings ? { instructionSettings: () => instructionSettings(harness.settings!) } : {}),
       // The core `tools` server, as the app passes it: only with tools on and a tool the agent may call (D0).

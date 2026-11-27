@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Event } from "@humanharness/runtime";
 import { APP_SCOPE } from "@humanharness/workspace";
-import { RoundNotStarted } from "../src/main/reviews";
+import { RoundNotStarted } from "../src/main/review-round";
 import { REVIEW_PROMPT } from "../src/main/task-prompts";
 import { NOTICE_MAX, emptyTasks } from "../src/main/task-store";
 import { setup } from "./task-manager-fixture";

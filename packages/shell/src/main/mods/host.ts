@@ -1,7 +1,7 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { AgentInfo, AgentTool, DailyInfo, Disposer, HoldVerdict, MainCtx, ModDefinition, PhaseMovedInfo, SendInfo, SendVerdict, TaskRef, TurnEndInfo } from "@humanharness/mod-sdk";
-import type { CoreApp, CoreMainCtx, CoreSender, FirstMessageSection } from "@humanharness/mod-sdk/core";
+import type { CoreAgentInfo, CoreApp, CoreMainCtx, CoreSender, FirstMessageSection } from "@humanharness/mod-sdk/core";
 import type { ModRow } from "@humanharness/protocol";
 import type { PushChannel } from "@humanharness/protocol/channels";
 import { isLines, modOff, modReloaded, readAgentTools } from "./agent-answers";
@@ -329,6 +329,12 @@ export class ModHost {
     return out;
   }
 
+  /** The agent side's order: the app's own mods first (their sections lead, and no other mod takes their tools' names). */
+  private agentListeners(name: "instructions" | "agentTools"): [Running, Fn][] {
+    const ours = ([r]: [Running, Fn]) => Number(r.mod.shipped === "core");
+    return this.listeners(name).sort((a, b) => ours(b) - ours(a));
+  }
+
   private each(name: Exclude<HookName, "beforeSend">, arg: unknown): Promise<void> {
     return this.eachFor(name, () => ({ arg }));
   }
@@ -482,15 +488,20 @@ export class ModHost {
     }
     return texts.length > 0 || items.length > 0 || excluded.size > 0 ? { text: texts.join("\n\n"), items, excluded } : null;
   }
+  /** Only the app's own mods are told the runtime's folder and the document kinds. */
+  private agentInfo(r: Running, o: AgentInfo): AgentInfo {
+    return r.mod.shipped === "core" ? { ...o } : { canEdit: o.canEdit };
+  }
+
   /**
-   * One section per `instructions()` hook that answers lines, in mod order, each led by a blank line as the app's own
+   * One section per `instructions()` hook that answers lines, core mods' first, then in mod order, each led by a blank line as the app's own
    * are. A throw, a timeout or another shape adds nothing and is a strike.
    */
-  async instructions(o: AgentInfo): Promise<string[][]> {
+  async instructions(o: AgentInfo | CoreAgentInfo): Promise<string[][]> {
     const sections: string[][] = [];
-    for (const [r, fn] of this.listeners("instructions")) {
+    for (const [r, fn] of this.agentListeners("instructions")) {
       if (!r.on) continue;
-      const res = await guarded(() => (fn as (o: AgentInfo) => unknown)({ ...o }), this.hookMs);
+      const res = await guarded(() => (fn as (o: AgentInfo) => unknown)(this.agentInfo(r, o)), this.hookMs);
       const lines = res.ok && isLines(res.value) ? res.value : null;
       await this.count(r, lines !== null, res.ok ? "instructions() must return a list of lines" : res.reason);
       if (lines && lines.length > 0) sections.push(lines[0] === "" ? [...lines] : ["", ...lines]);
@@ -498,15 +509,15 @@ export class ModHost {
     return sections;
   }
   /**
-   * The mods' `agentTools()`, in mod order, none under a `taken` name or an earlier mod's. A throw or a timeout adds
+   * The mods' `agentTools()`, core mods' first, then in mod order, none under a `taken` name or an earlier mod's. A throw or a timeout adds
    * nothing; a tool the `ui` server can't take is left out; each is a strike, and a mod it turns off adds nothing.
    */
-  async agentTools(o: AgentInfo, taken: Iterable<string>): Promise<(AgentTool & { mod: string })[]> {
+  async agentTools(o: AgentInfo | CoreAgentInfo, taken: Iterable<string>): Promise<(AgentTool & { mod: string })[]> {
     const names = new Set(taken);
     const tools: (AgentTool & { mod: string })[] = [];
-    for (const [r, fn] of this.listeners("agentTools")) {
+    for (const [r, fn] of this.agentListeners("agentTools")) {
       if (!r.on) continue;
-      const res = await guarded(async () => readAgentTools(await (fn as (o: AgentInfo) => unknown)({ ...o }), names), this.hookMs);
+      const res = await guarded(async () => readAgentTools(await (fn as (o: AgentInfo) => unknown)(this.agentInfo(r, o)), names), this.hookMs);
       const problem = res.ok ? res.value.problem : res.reason;
       await this.count(r, problem === undefined, problem);
       if (!res.ok || !r.on) continue;

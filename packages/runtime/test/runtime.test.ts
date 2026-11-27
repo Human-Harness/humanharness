@@ -6,10 +6,12 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { getEngine } from "@humanharness/engines";
 import { type ClaudeScript, claudeResultLine, claudeTextLines, fakeAcpCommand, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
 import { allBlocks, loadHarness, resolveInHarness } from "@humanharness/harness-sdk";
-import { ReviewRefused, managedSection, writingLines } from "@humanharness/workspace";
+import { managedSection } from "@humanharness/workspace";
+import { writingLines } from "../../mods/documents/src/main/agent";
 import { ClaudeCliTransport } from "@humanharness/engines/registry";
 import type { Event } from "../src/events";
-import { type HarnessRuntime, REVIEW_FAILED, type RuntimeOptions, createRuntime, reviewAgent, reviewHandler } from "../src/runtime";
+import { type HarnessRuntime, type RuntimeOptions, createRuntime } from "../src/runtime";
+import { reviewAgent } from "./documents-agent";
 import type { Session } from "../src/transport";
 
 /** Sockets the runtime opened: a test can make the bridge's close fail and see the rpc's close. */
@@ -590,26 +592,5 @@ describe("createRuntime", () => {
     const withReview = await run(reviewAgent(reader, async () => null));
     expect(withReview).toEqual(without);
     expect(withReview.opened).toBe(0);
-  });
-});
-
-describe("reviewHandler", () => {
-  it("passes the app's refusals to the agent, and a fixed line for any other error", async () => {
-    const refused = reviewHandler(async () => {
-      throw new ReviewRefused("spec.md has too many comments", "full");
-    });
-    await expect(refused({})).rejects.toThrow("spec.md has too many comments");
-    const failed = reviewHandler(async () => {
-      throw new Error("EACCES: /Users/someone/Work/.harness/reviews/spec.md.json");
-    });
-    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
-    const err = await failed({}).catch((e: Error) => e);
-    expect(logged).toHaveBeenCalledOnce();
-    logged.mockRestore();
-    expect(err).toBeInstanceOf(Error);
-    expect((err as Error).message).not.toContain("/Users");
-    expect((err as Error).message).toBe(REVIEW_FAILED);
-    const ok = reviewHandler(async (r) => ({ echo: r }));
-    await expect(ok({ op: "read" })).resolves.toEqual({ echo: { op: "read" } });
   });
 });

@@ -27,7 +27,8 @@ import {
   type z,
 } from "@humanharness/harness-sdk";
 import { layoutSchema } from "@humanharness/mod-sdk";
-import { estimateTokens, settingsLines, writingLines } from "@humanharness/workspace";
+import { estimateTokens, settingsLines } from "@humanharness/workspace";
+import { documentKindsTokens } from "./check-document-kinds";
 import { type Io, UsageError, parseCommand } from "./cli";
 import { type HarnessDoc, PERMISSION_KEYS, type PermissionKey, QUESTIONS_ROW, parseHarnessMd, sectionText } from "./harness-md";
 import { clashMessage, matchClashes } from "./mock-match";
@@ -140,7 +141,7 @@ export async function checkHarness(
   findings.push(...settingsFindings(harness));
   findings.push(...(await searchFindings(harness)));
   findings.push(...sidekickFindings(harness));
-  findings.push(...documentKindsFindings(harness));
+  findings.push(...(await documentKindsFindings(harness)));
   findings.push(...(await setupFindings(harness)));
   findings.push(...brandFindings(harness));
   findings.push(...(await modFindings(harness)));
@@ -679,11 +680,10 @@ function settingsFindings(h: LoadedHarness): Finding[] {
 const DOCUMENT_KINDS_TOKENS_WARN = 400;
 
 /** Document kinds (document-reader spec §4.2): their part of AGENTS.md is in every session's stable prefix too. */
-function documentKindsFindings(h: LoadedHarness): Finding[] {
+async function documentKindsFindings(h: LoadedHarness): Promise<Finding[]> {
   const kinds = h.documents?.kinds;
   if (!kinds || Object.keys(kinds).length === 0) return [];
-  // What the kinds add on top of the base guide, which every harness has anyway.
-  const tokens = estimateTokens(writingLines({ kinds }).join("\n")) - estimateTokens(writingLines({ kinds: {} }).join("\n"));
+  const tokens = await documentKindsTokens(h, kinds);
   if (tokens <= DOCUMENT_KINDS_TOKENS_WARN) return [];
   const message = `The document kinds take about ${tokens} tokens of AGENTS.md (more than ${DOCUMENT_KINDS_TOKENS_WARN}): keep each \`when\` to one short sentence and declare only the kinds the harness needs.`;
   return [warning("documents-tokens", message, MANIFEST)];

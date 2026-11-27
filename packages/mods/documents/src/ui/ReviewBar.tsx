@@ -1,6 +1,6 @@
 import { type Dispatch, type KeyboardEvent, type SetStateAction, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { ReviewResult, ReviewSendResult, ReviewSummary } from "./client";
+import type { ReviewResult, ReviewSendResult, ReviewSummary } from "@humanharness/ui";
 
 /** What the person is in the middle of: kept by the reader, so it survives the bar moving in and out of focus mode. */
 export interface BarDraft {

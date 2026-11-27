@@ -23,7 +23,7 @@ export function ContextChip({
   engine: EngineOption | undefined;
   limits: LimitWindow[] | null;
   lastTokens: number | null;
-  onOpen: () => void;
+  onOpen: (() => void) | undefined;
 }) {
   const { t, i18n } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -93,7 +93,7 @@ export function ContextChip({
                 ))}
               </>
             )}
-            <Rx.Flex justify="end">
+            {onOpen && <Rx.Flex justify="end">
               <Rx.Button
                 variant="outline"
                 color="gray"
@@ -107,7 +107,7 @@ export function ContextChip({
               >
                 {t("taskBar.openContext", { defaultValue: "Open context" })}
               </Rx.Button>
-            </Rx.Flex>
+            </Rx.Flex>}
           </Rx.Flex>
         </Rx.Popover.Content>
       )}

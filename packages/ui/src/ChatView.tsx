@@ -32,7 +32,6 @@ import {
   nextInPath,
   partsOf,
 } from "./client";
-import { ContextPanel } from "./ContextPanel";
 import { DocumentContext, type DocumentHost } from "./documents-context";
 import { DocumentReader, type ReaderTarget } from "./DocumentReader";
 import { ErrorCard, isFixable, problemError } from "./ErrorCard";
@@ -41,6 +40,7 @@ import { FileTimelineSplit } from "./FileTimelineSplit";
 import { FlowSide } from "./FlowSide";
 import { type Paused, NO_PAUSED, countPaused, pausedSummary } from "./focus-notices";
 import { SlotBoundary } from "./layout/BlockBoundary";
+import { type AppValue, useOptionalApp } from "./layout/app";
 import { useBlocks } from "./layout/registry";
 import { pruneDrafts } from "./InputForm";
 import { type BlockActions, type BlockProps, type InputContext, Message } from "./Message";
@@ -241,7 +241,10 @@ export function ChatView({
   const [timelineFile, setTimelineFile] = useState<string | null>(null);
   const [notesPage, setNotesPage] = useState<{ open?: string; task?: boolean } | null>(null);
   /** The context panel is open (context-panel spec §5.1); it shares the reader's slot. */
-  const [contextOpen, setContextOpen] = useState(false);
+  const [contextWanted, setContextOpen] = useState(false);
+  /** The context panel a mod registered (`context-panel/panel`); without one there is no "Open context" and no panel. */
+  const ContextBlock = useBlocks().get("context-panel", "panel");
+  const contextOpen = contextWanted && ContextBlock !== undefined;
   /** The meter that opened the context panel: it gets focus back when the panel closes. */
   const contextOpener = useRef<HTMLElement | null>(null);
   /** The document reader beside the chat (document-reader spec §5); null: closed. Kept in state: a stable target. */
@@ -353,6 +356,7 @@ export function ChatView({
   const mods = useModParts({ slim: !!slim, narrow });
   /** The History page a mod registered (`ctx.taskPage`); without one there is no History page and no rail entry. */
   const historyEntry = useBlocks().slot("taskPage").find((e) => e.name === "history");
+  const app = useOptionalApp();
   /** A review in flight: until when the countdown runs (null: "always wait"). */
   const [reviewing, setReviewing] = useState<{ until: number | null } | null>(null);
   const reviewSeq = useRef(0);
@@ -1025,7 +1029,7 @@ export function ChatView({
         return true;
       case "open-context":
         // The open task's context: with no task the panel has nothing to show (and would stay open for the next one).
-        if (slim || !tasks.current) return false;
+        if (slim || !tasks.current || !ContextBlock) return false;
         openContext();
         return true;
       case "next-part": {
@@ -1672,7 +1676,7 @@ export function ChatView({
               {...bar}
               working={tasks.current ? Boolean(chat.live) : null}
               scope={scopeBar?.(blocked())}
-              context={tasks.current?.context && <ContextChip {...tasks.current.context} engine={engineOption} limits={chat.limits} lastTokens={lastTurnTokens(chat.entries)} onOpen={openContext} />}
+              context={tasks.current?.context && <ContextChip {...tasks.current.context} engine={engineOption} limits={chat.limits} lastTokens={lastTurnTokens(chat.entries)} onOpen={ContextBlock ? openContext : undefined} />}
               path={pathButton}
               parts={<ModBarParts parts={mods} overlay={overlay} client={client} task={tasks.current?.id ?? null} />}
             />,
@@ -2002,16 +2006,19 @@ export function ChatView({
               onFocus={(on) => setFocusMode(on, reader.path)}
             />
           )}
-          {contextOpen && tasks.current && !slim && (
-            <ContextPanel
-              key={tasks.current.id}
-              client={client}
-              taskId={tasks.current.id}
-              {...(tasks.current.context ? { usage: tasks.current.context } : {})}
-              notes={tasks.notes}
-              onOpen={openFromContext}
-              onClose={closeContext}
-            />
+          {contextOpen && tasks.current && !slim && ContextBlock && (
+            <SlotBoundary key={tasks.current.id} mod="context-panel" client={client}>
+              <ContextBlock
+                app={(app ?? { client }) as AppValue}
+                props={{
+                  taskId: tasks.current.id,
+                  ...(tasks.current.context ? { usage: tasks.current.context } : {}),
+                  notes: tasks.notes,
+                  onOpen: openFromContext,
+                  onClose: closeContext,
+                }}
+              />
+            </SlotBoundary>
           )}
           {timelineFile !== null && !slim && (
             <FileTimelineSplit

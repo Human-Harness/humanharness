@@ -20,7 +20,6 @@ export { LegalInEnglish, useLegalLang } from "./EngineOnboarding";
 export { MaterialPanel, type MaterialPanelProps, useMaterial } from "./MaterialPanel";
 export { PluginSlot } from "./plugins/PluginSlot";
 export { FileTimeline, type FileTimelineProps } from "./FileTimeline";
-export { ContextPanel, type ContextPanelProps } from "./ContextPanel";
 export { FileDiff, type FileDiffProps, type DiffLayout } from "./FileDiff";
 export type { BlockActions, BlockProps, InputContext, InputProps } from "./Message";
 export { AnswerView, InputForm, type InputFormProps } from "./InputForm";
@@ -39,7 +38,7 @@ export type { ModelsRowProps, OverlayButtonProps, OverlayPanelProps, RowProps, S
 export type { AnswerHold } from "./InputForm";
 export { BackupNotice, type FolderMove } from "./BackupNotice";
 export { AppFooter, HHLogo, SettingsGear, Tag, type TagTone, TopBar } from "./chrome";
-export { Hidden, Icon, Rx } from "./guide";
+export { Hidden, Icon, IconButton, Rx } from "./guide";
 // The History entry labels and day grouping the file timeline also uses; the History panel (a core mod) builds with them.
 export { byDay, entryLabel, sameDay } from "./history-labels";
 // Core-only guide pieces for the core mods (not in hh.d.ts).

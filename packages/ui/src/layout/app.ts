@@ -38,6 +38,9 @@ export interface AppValue {
 const AppContext = createContext<AppValue | null>(null);
 export const AppProvider = AppContext.Provider;
 
+/** The app when there is one: a task view drawn on its own (a setup step, a test) has none. */
+export const useOptionalApp = (): AppValue | null => useContext(AppContext);
+
 /** The app, for the layout and its blocks. */
 export function useApp(): AppValue {
   const app = useContext(AppContext);

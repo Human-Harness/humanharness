@@ -1,10 +1,6 @@
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Icon } from "./guide/icons";
-import type { ContextItem, ContextRead, ContextRefusal, ContextResult, HarnessClient, NoteView, TaskContext } from "./client";
-import { shownLanguage } from "./language";
-import { Button } from "./guide/Button";
-import { IconButton } from "./guide/IconButton";
+import { type ContextItem, type ContextRead, type ContextRefusal, type ContextResult, type HarnessClient, type NoteView, type TaskContext, Button, Icon, IconButton, shownLanguage } from "@humanharness/ui";
 
 export interface ContextPanelProps {
   client: HarnessClient;

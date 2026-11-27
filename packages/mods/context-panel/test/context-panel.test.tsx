@@ -2,10 +2,10 @@
 import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { TaskContext } from "../src/client";
+import type { TaskContext } from "@humanharness/ui";
 import { ContextPanel } from "../src/ContextPanel";
-import { FakeClient } from "./fake-client";
-import { renderIn } from "./render";
+import { FakeClient } from "../../../ui/test/fake-client";
+import { renderIn } from "../../../ui/test/render";
 
 afterEach(cleanup);
 

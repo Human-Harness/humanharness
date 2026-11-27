@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import type { ReactNode } from "react";
 import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
+import { I18nextProvider } from "react-i18next";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatView } from "../src/ChatView";
 import type { ChatEntry, ModsView } from "../src/client";
@@ -126,6 +127,30 @@ describe("ctx.panel (the reader's slot)", () => {
     expect(modPanel()).toBeNull();
   });
 
+  it("a handle's close() closes its own panel only, not the one that replaced it", async () => {
+    const registry = createBlockRegistry();
+    let ctx!: UiCtx;
+    await startModLoader({
+      client: { mods: { view: async () => ({ mods: [], problems: [] }), onChanged: () => () => {}, onReloaded: () => () => {}, call: async () => undefined, on: () => () => {} } },
+      registry,
+      core: [{ id: "viewer", ui: (c) => void (ctx = c) }],
+    }).settled();
+    const a = ctx.panel(Panel);
+    const b = ctx.panel(Panel);
+    await chat(registry);
+    act(() => a.open({ path: "a" }));
+    act(() => b.open({ path: "b" }));
+    act(() => a.close());
+    expect(within(modPanel()!).getByText("b")).toBeTruthy();
+    // Opened again through the first handle, the panel is that handle's.
+    act(() => a.open({ path: "a again" }));
+    act(() => b.close());
+    expect(within(modPanel()!).getByText("a again")).toBeTruthy();
+    act(() => a.close());
+    expect(modPanel()).toBeNull();
+    expect(registry.slot("openPanel")).toHaveLength(0);
+  });
+
   it("closes when the chat takes the slot back (a new question)", async () => {
     const registry = createBlockRegistry();
     await load(registry);
@@ -214,6 +239,53 @@ describe("ctx.taskView.quiet", () => {
     expect(body().classList.contains("hh-focus")).toBe(false);
     mod.quiet(false);
     expect(screen.queryByText(/^While you were reading/)).toBeNull();
+  });
+
+  const view = (registry: BlockRegistry, client: FakeClient, key: string) => (
+    <ModBlocksProvider registry={registry}>
+      <button type="button">Outside</button>
+      <ChatView key={key} client={client} state={client.state} components={{}} stateBlocks={[]} />
+    </ModBlocksProvider>
+  );
+  const expectNothingLeft = (registry: BlockRegistry) => {
+    expect(registry.slot("openPanel")).toHaveLength(0);
+    expect(registry.slot("quiet")).toHaveLength(0);
+    expect(modPanel()).toBeNull();
+    expect(body().className).toBe("hh-body");
+  };
+
+  it("a mod's panel and quiet mode go with the chat: the next one starts with neither", async () => {
+    const registry = createBlockRegistry();
+    const mod = await load(registry);
+    const client = await chat(registry);
+    act(() => client.openDocument("a.md"));
+    mod.quiet(true);
+    cleanup();
+    expect(registry.slot("openPanel")).toHaveLength(0);
+    expect(registry.slot("quiet")).toHaveLength(0);
+    await chat(registry);
+    expectNothingLeft(registry);
+  });
+
+  it("a remount by key (another task or scope) drops them too, with no summary and no focus moved", async () => {
+    const registry = createBlockRegistry();
+    const mod = await load(registry);
+    const client = new FakeClient({ language: "en", folder: "/w", engineId: "claude" });
+    client.chat = [answer];
+    const { i18n, rerender } = await renderIn("en", view(registry, client, "one"));
+    await screen.findByText("I wrote the spec.");
+    act(() => client.openDocument("a.md"));
+    mod.quiet(true);
+    act(() => client.emitTasks({ current: { id: "t1", status: "waiting" }, actions: {}, notes: [] }));
+    const push = vi.spyOn(client.focus, "set");
+    const outside = screen.getByRole("button", { name: "Outside" });
+    outside.focus();
+    await act(async () => rerender(<I18nextProvider i18n={i18n}>{view(registry, client, "two")}</I18nextProvider>));
+    await screen.findByText("I wrote the spec.");
+    expectNothingLeft(registry);
+    expect(screen.queryByText(/^While you were reading/)).toBeNull();
+    expect(push).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(outside);
   });
 
   it("leaves no core quiet behind when the chat goes away", async () => {

@@ -83,8 +83,9 @@ export function useReaderSlot(options: Options) {
     });
     return () => {
       off();
-      // The core's own focus goes with the view; a mod's stays the mod's.
-      for (const held of registry.slot("quiet")) if (held.mod === "core") held.end();
+      // The slot and quiet mode go with the view, a mod's too (it hears no unmount); off first, so nothing is told.
+      endQuiet(registry);
+      closePanels(registry);
     };
   }, [registry]);
 
@@ -182,7 +183,8 @@ export function useReaderSlot(options: Options) {
       if (from?.isConnected && from.getAttribute("aria-disabled") !== "true") from.focus();
       else options.composer.current?.focus();
     }
-    wasFilled.current = filled;
+    // A view remounted by key renders before the old one closes its panel: that one never filled this view's slot.
+    wasFilled.current = reader !== null || (panel !== undefined && registry.slot("openPanel").includes(panel));
   }, [filled]);
 
   // A link followed in focus mode: the harness's view hears which document is read now.

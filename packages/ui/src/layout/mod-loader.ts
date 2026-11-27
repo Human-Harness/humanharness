@@ -89,8 +89,9 @@ function uiRun(id: string, mods: Mods, registry: BlockRegistry) {
     };
   };
   const slot = <K extends keyof Slots>(kind: K, entry: Slots[K]) => add(() => registry.add(kind, entry));
-  /** The panel this ui opened last. */
+  /** The panel this ui opened last, and the `ctx.panel` handle that opened it. */
   let dropPanel: (() => void) | undefined;
+  let panelOwner: object | undefined;
   const openPanel = (Component: Slots["openPanel"]["Component"], props: unknown) => {
     const previous = dropPanel;
     // The new one goes in before the old one goes out: the slot is never empty between them.
@@ -139,10 +140,19 @@ function uiRun(id: string, mods: Mods, registry: BlockRegistry) {
       };
     },
     openFile: (handler) => slot("opener", { mod: id, open: handler }),
-    panel: (component) => ({
-      open: (props) => openPanel(component as Slots["openPanel"]["Component"], props),
-      close: () => dropPanel?.(),
-    }),
+    panel: (component) => {
+      const handle = {
+        open: (props?: unknown) => {
+          panelOwner = handle;
+          openPanel(component as Slots["openPanel"]["Component"], props);
+        },
+        // A handle whose panel was replaced closes nothing.
+        close: () => {
+          if (panelOwner === handle) dropPanel?.();
+        },
+      };
+      return handle;
+    },
     taskView: { quiet },
     call: (name, payload) => mods.call(id, name, payload),
     on: (name, fn) => add(() => mods.on(id, name, fn)),

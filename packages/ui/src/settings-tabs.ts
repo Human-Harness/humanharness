@@ -4,7 +4,7 @@ import { type BlockRegistry, appRegistry } from "./layout/registry";
 
 // Settings' tabs, apart from the sheet: search's rows read them without loading the sheet's components. Mods (minimal-core
 // spec §3.1) is a tab search doesn't open yet: `SearchSettingsTab` lives in the protocol's views.
-/** The core's own tabs; every other tab is a mod's. */
+/** The tabs the list places: the core's own, and Usage, which the usage mod draws; every other tab is a mod's. */
 type CoreTab = "general" | "harness" | "engine" | "models" | "mods" | "plugins" | "connections" | "jobs" | "usage";
 export type SettingsTab = CoreTab | ModTab;
 /** A tab a mod put in Settings (`ctx.settingsTab(name, …)`): its id is the name the mod gave it. */
@@ -32,7 +32,9 @@ export function visibleTabs(state: AppState, registry: BlockRegistry = appRegist
       (id !== "harness" || state.settings !== undefined || state.setup !== undefined) &&
       (id !== "plugins" || state.plugins !== undefined) &&
       (id !== "connections" || state.connections !== undefined) &&
-      (id !== "jobs" || state.jobs !== undefined),
+      (id !== "jobs" || state.jobs !== undefined) &&
+      // Usage is the usage mod's tab: it keeps its place after Jobs while the mod is on and shows.
+      (id !== "usage" || modTabs(registry).some((m) => m.name === id && (m.shown?.(state) ?? true))),
   );
   const own = modTabs(registry)
     .filter((m) => m.shown?.(state) ?? true)

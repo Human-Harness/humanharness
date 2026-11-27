@@ -8,6 +8,7 @@ import type { BrowserWindow, Dialog } from "electron";
 import { type ConfigStore, historyDir } from "./config";
 import { type GuardedMoveDeps, type MoveDeps, guardedMove, moveFolder, moveJournal, precheckMove } from "./move-folder";
 import type { Profiles } from "./profiles";
+import type { CoreEvents } from "./mods/core-events";
 import { checkFolder } from "./validate";
 
 export interface FolderIpcDeps {
@@ -37,7 +38,7 @@ export interface FolderIpcDeps {
   plainTasks: { checkpointBeforeMove(): Promise<void> };
   restores: { settled(): Promise<unknown> };
   documentSessions: { closeAll(): void };
-  searchSvc: { discard(base: string): Promise<void> };
+  events: Pick<CoreEvents, "baseGone">;
   validConfig(): Promise<ConfiguredApp | null>;
   baseOf(c: { folder: string; profile?: string }): string;
   standaloneHistory(key: string): Promise<History>;
@@ -61,7 +62,7 @@ export function folderIpc(d: FolderIpcDeps) {
     plainTasks,
     restores,
     documentSessions,
-    searchSvc,
+    events,
     validConfig,
     baseOf,
     standaloneHistory,
@@ -180,10 +181,10 @@ export function folderIpc(d: FolderIpcDeps) {
       });
       if (!result.ok) return { ...result, ...(state ? { state } : {}) };
       dropDataStoresUnder(c.folder);
-      // Search's indexes are caches keyed by the base (plan deviation 2): the old ones go, the next ⌘K rebuilds.
-      // `c` is the config from before the move, so these are the old bases; the profile ids did not change.
+      // Whatever is keyed by a base (search's indexes are caches) goes with it. `c` is the config from before the
+      // move, so these are the old bases; the profile ids did not change.
       const oldBases = people ? (await profileIds()).map((id) => profileDir(c.folder, id)) : [c.folder];
-      for (const b of oldBases) void searchSvc.discard(b).catch((err: unknown) => console.error("Could not drop the old search index", err));
+      for (const b of oldBases) void events.baseGone(b).catch((err: unknown) => console.error("Could not drop what was keyed by the old base", err));
       if (!state) throw new Error("Could not read the app state after the move");
       const { oldRemoved, historyMoved } = result.done;
       return { ok: true, state, ...(oldRemoved ? {} : { leftBehind: c.folder }), ...(historyMoved ? {} : { historyLeftBehind: true }) };

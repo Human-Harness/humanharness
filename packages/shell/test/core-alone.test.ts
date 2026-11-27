@@ -69,6 +69,16 @@ describe("the core alone (minimal-core 1a)", () => {
     expect(refresh).toHaveBeenCalledTimes(1);
   });
 
+  it("a commit's paths reach a core mod as `restored(paths)`", () => {
+    const restored = vi.fn(async () => {});
+    let onCommit: (c: { paths: string[] }) => void = () => {};
+    const history = { onCommit: (fn: typeof onCommit) => ((onCommit = fn), () => {}) };
+    const s = createAppServices(deps({ modHost: () => ({ refresh: async () => {}, restored }) }));
+    s.announceCommits(history as never);
+    onCommit({ paths: ["a.md"] });
+    expect(restored).toHaveBeenCalledWith(["a.md"]);
+  });
+
   it("without a mod store, the `sidekick` collection is no collection of the core's", async () => {
     const s = createAppServices(deps());
     await expect(s.personData({ op: "get", collection: "sidekick", key: "settings" }, { scope: "_app" })).rejects.toThrow(/no collection "sidekick"/);

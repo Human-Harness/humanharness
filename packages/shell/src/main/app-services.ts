@@ -3,12 +3,11 @@ import { app, type BrowserWindow, dialog, shell } from "electron";
 import { getEngine } from "@humanharness/engines";
 import { type LoadedHarness, dataCollections } from "@humanharness/harness-sdk";
 import type { ConfiguredApp, ScopesView } from "@humanharness/protocol";
+import type { CoreApp } from "@humanharness/mod-sdk/core";
 import type { PushChannel } from "@humanharness/protocol/channels";
-import { type SearchDoc, actionDocs, openTaskDoc, pastTaskDocs } from "@humanharness/search";
 import { APP_SCOPE, type History, MAIN_SCOPE, loadReview, notesPrefix, readNotes } from "@humanharness/workspace";
 import type { DataStore, ScopeStore } from "@humanharness/workspace";
 import type { ConfigStore } from "./config";
-import { ContextService } from "./context";
 import { dataWriteQueue, harnessUiDataRequests, personDataRequests } from "./data-requests";
 import { workerDiff } from "./diff-runner";
 import type { EngineIpc } from "./engine-config/engine-ipc";
@@ -25,9 +24,8 @@ import type { Profiles } from "./profiles";
 import type { ResolvedReference } from "./references";
 import { RestoreGuard } from "./restore-guard";
 import { ReviewService } from "./reviews";
-import { searchData } from "./search/data-sources";
-import { workerBuild } from "./search/runner";
-import { SearchService } from "./search/service";
+import { createCoreEvents } from "./mods/core-events";
+import type { ModHost } from "./mods/host";
 import { revealIfStillSafe } from "./open-path";
 import type { SettingsController } from "./settings";
 import type { TaskManager } from "./task-manager";
@@ -69,7 +67,7 @@ export interface AppServicesDeps {
   /** The mods' own stores (`ctx.stores`): whether a mod has one named `name`, and that store in `base`. Absent: none. */
   modStores?: { has(name: string): boolean; storeFor(base: string, name: string): DataStore | undefined };
   /** The mod host, told after a restore (core mods' `onRefresh`). Absent or null: no mods (D0). */
-  modHost?(): { refresh(): Promise<void> } | null;
+  modHost?(): (Pick<ModHost, "refresh"> & Partial<Pick<ModHost, "dataChanged" | "restored" | "baseGone">>) | null;
   scopeStoreFor(base: string): ScopeStore;
   scopesView(): Promise<ScopesView>;
   currentHistory(): Promise<History | null>;
@@ -114,6 +112,9 @@ export function createAppServices(d: AppServicesDeps) {
     profileChange: () => d.profilesCtl()?.changing() ?? false,
   });
 
+  /** What happened in the base (data written, restored, a base gone, quitting): core mods and the core's services listen. */
+  const events = createCoreEvents({ host: () => d.modHost?.() ?? null });
+
   /**
    * Restores: refused while quitting, while a task operation runs or turns are held (engine change, folder
    * move, a profile switch); one at a time; new turns are refused and a runtime starting waits until it ends.
@@ -123,8 +124,8 @@ export function createAppServices(d: AppServicesDeps) {
   /** A restore changes tracked files with no data event: the settings may have changed. */
   function afterRestore(): void {
     void d.settingsCtl()?.changed();
-    // A restore reconciles the whole folder (search spec §4.2); a no-op until search was first opened (D0).
-    searchSvc.committed(null);
+    // A restore reconciles the whole folder (search spec §4.2): the search index hears it as `restored`.
+    events.restored(null);
     // The core mods read their settings again (Sidekick on or off, its state sent). D0: no host.
     void d.modHost?.()?.refresh().catch((err: unknown) => console.error("The mods' refresh failed", err));
   }
@@ -212,123 +213,60 @@ export function createAppServices(d: AppServicesDeps) {
     diff: workerDiff({ entry: path.join(d.here, "diff-worker.js") }),
   });
 
-  /** The context panel (context-panel spec): the person's pins and exclusions and the open task's record. */
-  const contextSvc = new ContextService({
-    base: async () => {
-      const c = await validConfig();
-      return c ? baseOf(c) : null;
-    },
-    scoped,
-    scopeExists: (id) => activeScope(id),
-    budget: async () => pinnedBudget(cleanModels((await d.config().load()).models), d.harness().context),
-    record: (id) => d.tasks().contextRecord(id),
-    openTask: async () => (await d.tasks().runningTask())?.id ?? null,
-    noteTitles: async (scope) => {
-      const c = await validConfig();
-      if (!c) return new Map<string, string>();
-      const notes = await readNotes(baseOf(c), notesPrefix(scoped(), scope)).catch(() => []);
-      return new Map(notes.map((n) => [n.path, n.title]));
-    },
-    history: () => currentHistory(),
-    trailer: () => d.tasks().trailerNow(),
-    blocked: () => (d.quitting() ? "The app is closing" : turnBlocked()),
-    add: (taskId, file) => {
-      const { accepted, done } = d.tasks().addContext(taskId, file);
-      // Closing ends the operation before it runs: not a failure worth a log line.
-      done.catch((err: unknown) => {
-        if (!d.quitting()) console.error("The Add now turn failed", err);
-      });
-      return accepted;
-    },
-    pickFile: async (base) => {
-      const window = d.window();
-      if (!window || window.isDestroyed()) return null;
-      const result = await dialog.showOpenDialog(window, { defaultPath: base, properties: ["openFile"] });
-      return result.canceled ? null : (result.filePaths[0] ?? null);
-    },
-    changed: (task) => void sendContext(task),
-  });
-
-  /** What search finds among the tasks, built when the palette opens (search spec §4.2): actions, the open task, past tasks. */
-  async function searchMemory(): Promise<SearchDoc[]> {
+  /** What search finds among the tasks, read when the palette opens (search spec §4.2): actions, the open task, past tasks. */
+  async function searchTasks(): ReturnType<CoreApp["search"]["tasks"]> {
     const scopeOf = (s: string | undefined) => (scoped() ? (s ?? APP_SCOPE) : MAIN_SCOPE);
     const view = await d.tasks().view();
-    const actions = actionDocs(
-      Object.entries(d.harness().actions).map(([id, a]) => ({
-        id,
-        label: a.label,
-        ...(a.description ? { description: a.description } : {}),
-        ...(a.tier ? { tier: a.tier } : {}),
-        ...(view.actions[id] ? { status: view.actions[id] } : {}),
-        scope: scopeOf(undefined),
-      })),
-    );
+    const actions = Object.entries(d.harness().actions).map(([id, a]) => ({
+      id,
+      label: a.label,
+      ...(a.description ? { description: a.description } : {}),
+      ...(a.tier ? { tier: a.tier } : {}),
+      ...(view.actions[id] ? { status: view.actions[id] } : {}),
+      scope: scopeOf(undefined),
+    }));
     const current = view.current;
     const label = (id: string | null | undefined) => (id && Object.hasOwn(d.harness().actions, id) ? d.harness().actions[id].label : undefined);
-    const open = current && label(current.action) ? [openTaskDoc({ id: current.id, title: label(current.action)!, scope: scopeOf(current.scope), at: 0 })] : [];
+    const open = current && label(current.action) ? { id: current.id, title: label(current.action)!, scope: scopeOf(current.scope) } : null;
     const history = await currentHistory();
     const rows = history ? historyView(await history.tasks()) : [];
-    const past = pastTaskDocs(
-      rows.flatMap((r) => {
-        const title = r.noteTitle ?? label(r.actionId);
-        return r.taskId && r.taskId !== current?.id && title ? [{ id: r.taskId, title, scope: scopeOf(r.scopeId), at: Date.parse(r.date) || 0 }] : [];
-      }),
-    );
-    return [...actions, ...open, ...past];
+    const past = rows.flatMap((r) => {
+      const title = r.noteTitle ?? label(r.actionId);
+      return r.taskId && r.taskId !== current?.id && title ? [{ id: r.taskId, title, scope: scopeOf(r.scopeId), at: Date.parse(r.date) || 0 }] : [];
+    });
+    return { actions, open, past };
   }
 
-  /** Global search's collections (search spec D4): the harness's, then each running plugin's, of the live index's base only. */
-  const searchDataDeps = searchData({
-    current: () => currentBase(),
-    collections: () => dataCollections(d.harness()),
-    scoped,
-    scopes: async (base) => (await scopeStoreFor(base).list()).filter((s) => !s.archived).map((s) => s.id),
-    store: (base) => dataStoreFor(base),
-    plugins: () => d.pluginsCtl() ?? null,
-  });
-
-  /** Global search (search spec): nothing is read, written or started until the window first asks (D0, D8). */
-  const searchSvc = new SearchService({
+  /** What global search's mod reads of the app (`ctx.app.search`): the mod owns the index, the worker and the channels. */
+  const search: CoreApp["search"] = {
     userData: () => app.getPath("userData"),
-    base: async () => {
-      const c = await validConfig();
-      return c ? baseOf(c) : null;
-    },
-    scoped,
     openScope: () => d.tasks().currentScope(),
     scopeTitles: async () => new Map((await scopesView()).list.map((s) => [s.id, s.title])),
     references: async () => {
       const c = await validConfig();
       return c ? (await workReferences(c, baseOf(c))).map((r) => ({ id: r.id, label: r.label, path: r.path })) : [];
     },
-    memory: () => searchMemory(),
+    tasks: () => searchTasks(),
     extraDenied: async () => {
       // Same rule as the history's ignore list: the engine's instructions file is the app's, not the person's.
       const c = await validConfig();
       const extra = c ? getEngine(c.engineId).instructionsFile?.path : undefined;
       return extra ? [extra] : [];
     },
-    status: (s) => sendToWindow("hh:searchStatus", s),
-    runner: workerBuild({ entry: path.join(d.here, "search-worker.js") }),
     reveal: (file, roots) => revealIfStillSafe(file, roots, (p) => shell.showItemInFolder(p)),
-    data: searchDataDeps,
-    // A burst of writes (an import, a plugin run) is one refresh.
-    dataDelayMs: 500,
-  });
-
-  /** The task's panel refreshes (`hh:context`); a task that is no longer open sends nothing. */
-  async function sendContext(task: string): Promise<void> {
-    const got = await contextSvc.get(task).catch(() => null);
-    if (got?.ok) sendToWindow("hh:context", { task, context: got.context });
-  }
+    collections: () => dataCollections(d.harness()),
+    scopes: async (base) => (await scopeStoreFor(base).list()).filter((s) => !s.archived).map((s) => s.id),
+    store: (base) => dataStoreFor(base),
+    plugins: () => d.pluginsCtl() ?? null,
+  };
 
   /** Tells the window which paths each commit touched: an open timeline gets its new entry (§6.3 `onChange`). */
   const commitAnnouncements = commitAnnouncer((paths) => {
     sendToWindow("hh:fileCommits", paths);
     // A commit that touched a scope's engine folder: its Engine config section reads it again (enginePresets only).
     d.engineIpc()?.committed(paths);
-    // Search (D0): a no-op until the palette first opened; then the commit's paths are read again.
-    searchSvc.committed(paths);
+    // Search (D0): the commit's paths go out as `restored`; the search service (and a core mod) read them again.
+    events.restored(paths);
   });
   const announceCommits = (history: History) => commitAnnouncements.watch(history);
 
@@ -344,9 +282,8 @@ export function createAppServices(d: AppServicesDeps) {
     harnessUiData,
     reviews,
     fileTimelines,
-    contextSvc,
-    searchSvc,
-    sendContext,
+    search,
+    events,
     commitAnnouncements,
     announceCommits,
   };

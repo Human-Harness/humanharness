@@ -24,6 +24,36 @@ const ModsContext = createContext<Mods>({ view: null, set: () => undefined });
  * `task`, and each mod's block in its own error boundary.
  */
 export function LayoutView({ layout, shown, task }: { layout: Layout; shown: string; task: () => ReactNode }) {
+  const mods = useMods();
+  return (
+    <ModsContext.Provider value={mods}>
+      <Node node={layout} axis="column" shown={shown} task={task} root />
+    </ModsContext.Provider>
+  );
+}
+
+/**
+ * The layout's overlay: the root's `overlay` blocks, drawn outside the flex tree and outside `.hh-screen`, so they show
+ * over Home, the task view and Settings. An off or missing mod's block draws nothing (no placeholder). HarnessApp
+ * mounts it beside the screen.
+ */
+export function LayoutOverlay({ layout }: { layout: Layout }) {
+  const mods = useMods();
+  const overlay = layout.type === "stack" ? layout.overlay : undefined;
+  if (!overlay?.length) return null;
+  return (
+    <ModsContext.Provider value={mods}>
+      <div data-layout-overlay="">
+        {overlay.map((c) => (
+          <ModBlock key={`${c.mod}/${c.block}`} content={c} quiet />
+        ))}
+      </div>
+    </ModsContext.Provider>
+  );
+}
+
+/** The mods' on/off as main last said, kept current. */
+function useMods(): Mods {
   const { client } = useApp();
   const [view, setView] = useState<ModsView | null>(null);
   useEffect(() => {
@@ -44,17 +74,12 @@ export function LayoutView({ layout, shown, task }: { layout: Layout; shown: str
       off?.();
     };
   }, [client]);
-  const mods: Mods = {
+  return {
     view,
     set: (id, on) => {
       client.mods.set(id, on).then(setView, () => undefined);
     },
   };
-  return (
-    <ModsContext.Provider value={mods}>
-      <Node node={layout} axis="column" shown={shown} task={task} root />
-    </ModsContext.Provider>
-  );
 }
 
 const px = (n: number | undefined) => (n === undefined ? undefined : `${n}px`);
@@ -110,12 +135,13 @@ function Content({ content, task }: { content: BlockContent; task: () => ReactNo
   return <ModBlock key={`${content.mod}/${content.block}`} content={content} />;
 }
 
-function ModBlock({ content }: { content: ModContent }) {
+function ModBlock({ content, quiet = false }: { content: ModContent; quiet?: boolean }) {
   const { t } = useTranslation();
   const app = useApp();
   const registry = useBlocks();
   const mods = useContext(ModsContext);
   const row = mods.view?.mods.find((m) => m.id === content.mod);
+  if (quiet && row && !row.on) return null;
   if (row && !row.on)
     return (
       <Placeholder text={t("layout.off", { name: row.name })}>
@@ -125,7 +151,7 @@ function ModBlock({ content }: { content: ModContent }) {
       </Placeholder>
     );
   const Block = registry.get(content.mod, content.block);
-  if (!Block) return <Placeholder text={t("layout.missing")} />;
+  if (!Block) return quiet ? null : <Placeholder text={t("layout.missing")} />;
   return (
     <BlockBoundary name={row?.name ?? content.mod} onTurnOff={() => mods.set(content.mod, false)}>
       <Block props={content.props ?? {}} app={app} />

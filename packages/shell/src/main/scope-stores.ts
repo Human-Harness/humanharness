@@ -8,8 +8,7 @@ import type { LinkedInstructions } from "./scope-access";
 import type { MaterialService } from "./material";
 import { isInsideFolder } from "./profile-base";
 import type { Profiles } from "./profiles";
-import { searchableCollection } from "./search/data-sources";
-import type { SearchService } from "./search/service";
+import type { CoreEvents } from "./mods/core-events";
 import type { SettingsController } from "./settings";
 import type { SetupSteps } from "./setup-steps";
 import type { TaskManager } from "./task-manager";
@@ -21,7 +20,7 @@ export interface ScopeStoresDeps {
   baseOf(c: { folder: string; profile?: string }): string;
   scoped(): boolean;
   sendToWindow(channel: PushChannel, value: unknown): void;
-  searchSvc(): Pick<SearchService, "dataChanged">;
+  events(): Pick<CoreEvents, "dataChanged">;
   settingsCtl(): SettingsController | null;
   profilesCtl(): Profiles | null;
   setupCtl(): SetupSteps | null;
@@ -79,8 +78,8 @@ export function createScopeStores(d: ScopeStoresDeps) {
         store,
         off: store.onChange((change) => {
           sendToWindow("hh:dataChange", change);
-          // Search (D0): a no-op until the palette first opened; then a searchable collection is read again.
-          if (searchableCollection(dataCollections(d.harness()), change.collection)) d.searchSvc().dataChanged();
+          // The core mods and the core's services (search) hear every write; each keeps the collections it cares for.
+          d.events().dataChanged(change.collection);
           if (change.collection === SETTINGS_COLLECTION) void d.settingsCtl()?.changed();
           // Profiles: the registry copies the record's name and colour (spec §4), whoever wrote it. Never rejects.
           if (change.collection === PROFILE_COLLECTION) void d.profilesCtl()?.sync(path.resolve(base));

@@ -8,6 +8,7 @@ import type { AppState, ModelsView, SearchSettingsTab } from "../src/client";
 import { SettingsPage } from "../src/SettingsPage";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
+import { usageRegistry, withUsage } from "./usage-mod";
 
 afterEach(cleanup);
 
@@ -33,7 +34,7 @@ describe("the Settings registry (search spec §6, plan deviation 13)", () => {
   it("General renders its rows for the state given (folder set, no parallel, no profiles)", async () => {
     const client = new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo", engineId: "claude" });
     const state = client.state;
-    await renderIn("en", <SettingsPage client={client} state={state} tab="general" onTab={() => {}} onChange={() => {}} onClose={() => {}} onSetup={() => {}} />, { theme: true });
+    await renderIn("en", withUsage(<SettingsPage client={client} state={state} tab="general" onTab={() => {}} onChange={() => {}} onClose={() => {}} onSetup={() => {}} />), { theme: true });
     await waitFor(() => expect(shown()).toContain("general.appearance"));
     expect(shown().sort()).toEqual(["general.appearance", "general.folder", "general.language", "general.textSize", ...(state.backup?.status ? ["general.backup"] : [])].sort());
   });
@@ -49,7 +50,7 @@ describe("the Settings registry (search spec §6, plan deviation 13)", () => {
   async function rowsOf(tab: SearchSettingsTab, setup: (c: FakeClient, state: AppState) => void) {
     const client = new FakeClient({ language: "en", folder: "/Users/me/Documents/Demo", engineId: "claude" });
     setup(client, client.state);
-    await renderIn("en", <SettingsPage client={client} state={client.state} tab={tab} onTab={() => {}} onChange={() => {}} onClose={() => {}} onSetup={() => {}} />, { theme: true });
+    await renderIn("en", withUsage(<SettingsPage client={client} state={client.state} tab={tab} onTab={() => {}} onChange={() => {}} onClose={() => {}} onSetup={() => {}} />), { theme: true });
     return client;
   }
 

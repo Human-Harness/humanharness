@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { HarnessReference } from "@humanharness/harness-sdk";
+import { homeOrDotFolder } from "@humanharness/workspace";
 import { folderProblem, realFolder } from "./validate";
 
 export interface ResolvedReference {
@@ -35,15 +36,8 @@ export function referenceAllowed(dir: string, home: string): boolean {
   return !dir.includes(",") && folderProblem(dir, home) === null && !homeOrDotFolder(dir, home);
 }
 
-/** Whether `dir` is the home folder, a dot-folder directly in it, or inside one. Without case. */
-export function homeOrDotFolder(dir: string, home: string): boolean {
-  const rel = path.relative(norm(home), norm(dir));
-  if (rel === "") return true;
-  const first = rel.split(path.sep)[0];
-  // Outside the home folder: not this rule's concern.
-  if (first === ".." || path.isAbsolute(rel)) return false;
-  return first.startsWith(".");
-}
+/** The rule lives in `workspace` (search's walk, now a mod, applies it too). */
+export { homeOrDotFolder };
 
 /** "~/…" for a path inside the home folder. */
 export function displayPath(p: string, home: string): string {

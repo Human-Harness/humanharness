@@ -4,12 +4,18 @@ import { type BlockComponent, ModBlocksProvider, createBlockRegistry } from "@hu
 import { renderIn as uiRenderIn } from "../../../ui/test/render";
 import mod from "../src/ui";
 import { historyViewRegistry } from "../../../ui/test/history-view";
+import { usageRegistry } from "../../../ui/test/usage-mod";
+import { contextPanelRegistry } from "../../../ui/test/context-panel-mod";
+import { searchRegistry } from "../../../ui/test/search-mod";
 
 // The tests here render HarnessApp, which draws Home from the layout's `home/home` block: their renders go inside a
 // ModBlocksProvider whose registry holds the block, registered as the shell's renderer entry does (minimal-core 0b1).
 const registry = createBlockRegistry();
 mod.ui?.({ id: "home", block: (name, component) => registry.register("home", name, component as BlockComponent) });
 historyViewRegistry(registry);
+usageRegistry(registry);
+contextPanelRegistry(registry);
+searchRegistry(registry);
 
 const withHome = ({ children }: { children: ReactNode }) => createElement(ModBlocksProvider, { registry, children });
 

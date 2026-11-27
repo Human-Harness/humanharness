@@ -1,12 +1,13 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { DailyInfo, Disposer, HoldVerdict, MainCtx, ModDefinition, PhaseMovedInfo, SendInfo, SendVerdict, TaskRef, TurnEndInfo } from "@humanharness/mod-sdk";
-import type { CoreApp, CoreMainCtx } from "@humanharness/mod-sdk/core";
+import type { CoreApp, CoreMainCtx, FirstMessageSection } from "@humanharness/mod-sdk/core";
 import type { ModRow } from "@humanharness/protocol";
 import type { PushChannel } from "@humanharness/protocol/channels";
 import { type ModsSettings, isModOn } from "./config";
 import { coreModOn } from "./core-mods";
 import { guarded } from "./guard";
+import { MOD_APP_CHANNELS } from "./app-channels";
 import { isPushChannel } from "./push-channels";
 import type { ResolvedMod } from "./resolve";
 
@@ -15,7 +16,7 @@ export const BEFORE_SEND_MS = 6_000;
 export const HOOK_MS = 5_000;
 export const STRIKES = 3;
 
-type HookName = "beforeSend" | "turnStart" | "turnEnd" | "taskOpen" | "taskClose" | "betweenTasks" | "phaseMoved" | "daily" | "close" | "refresh";
+type HookName = "beforeSend" | "turnStart" | "turnEnd" | "taskOpen" | "taskClose" | "betweenTasks" | "phaseMoved" | "daily" | "close" | "refresh" | "firstMessage" | "contextChanged" | "dataChanged" | "restored" | "baseGone";
 const HOOKS: readonly HookName[] = ["beforeSend", "turnStart", "turnEnd", "taskOpen", "taskClose", "betweenTasks", "phaseMoved", "daily", "close"];
 /** A local calendar day, YYYY-MM-DD. */
 export const localDay = (d: Date): string => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -207,12 +208,24 @@ export class ModHost {
   }
 
   /** What only a core mod's ctx has: `app` and `onRefresh` (its `push` also takes an app push channel, `pusher`). */
-  private core(r: Running, add: (name: HookName) => (fn: Fn) => Disposer): Partial<Pick<CoreMainCtx<unknown>, "app" | "onRefresh">> {
+  private core(r: Running, add: (name: HookName) => (fn: Fn) => Disposer): Partial<Pick<CoreMainCtx<unknown>, "app" | "onRefresh" | "handle">> & { coreOn?: Record<string, unknown> } {
     if (r.mod.shipped !== "core") return {};
-    const app = this.d.coreApp?.(r.mod.json.id);
+    const base = this.d.coreApp?.(r.mod.json.id);
+    // The context-changed listeners live in the host (a restart builds a new one): the mod's registration is a hook.
+    const app = base ? { ...base, tasks: { ...base.tasks, onContextChanged: add("contextChanged") as unknown as CoreApp["tasks"]["onContextChanged"] } } : undefined;
+    const handle: CoreMainCtx<unknown>["handle"] = (name, fn) => {
+      if (!(MOD_APP_CHANNELS as readonly string[]).includes(name)) throw new Error(`Not an app channel a core mod answers: ${String(name)}`);
+      if (this.appChannel(name)) throw new Error(`Another mod already handles ${name}`);
+      r.channels.set(name, (args) => fn(...(Array.isArray(args) ? args : [])));
+      const off = () => void r.channels.delete(name);
+      r.disposers.push(off);
+      return off;
+    };
     return {
       ...(app ? { app } : {}),
+      handle,
       onRefresh: add("refresh") as CoreMainCtx<unknown>["onRefresh"],
+      coreOn: { firstMessage: add("firstMessage"), dataChanged: add("dataChanged"), restored: add("restored"), baseGone: add("baseGone") },
     };
   }
 
@@ -224,13 +237,14 @@ export class ModHost {
       r.disposers.push(off);
       return off;
     };
+    const { coreOn, ...core } = this.core(r, add);
     return {
       ...(this.d.services(r.mod.json.id) as MainCtx<unknown>),
-      ...this.core(r, add),
+      ...core,
       push: this.pusher(r),
       id: r.mod.json.id,
       config,
-      on: Object.fromEntries(HOOKS.map((n) => [n, add(n)])) as unknown as MainCtx<unknown>["on"],
+      on: { ...Object.fromEntries(HOOKS.map((n) => [n, add(n)])), ...coreOn } as unknown as MainCtx<unknown>["on"],
       ipc: (name, handler) => {
         // A mod's own name (`mods.<id>.<name>`): never an app channel's, not even a core mod's (minimal-core 1b).
         if (typeof name !== "string" || !name || name.startsWith("hh:")) throw new Error(`Not a mod's own channel: ${String(name)}`);
@@ -372,6 +386,27 @@ export class ModHost {
     return false;
   }
 
+  /** The mod that is on and answers app channel `name`, if any. */
+  private appChannel(name: string): Running | undefined {
+    for (const r of this.mods.values()) if (r.on && r.channels.has(name)) return r;
+    return undefined;
+  }
+
+  /** Whether a core mod that is on answers app channel `name`. */
+  handles(name: string): boolean {
+    return this.appChannel(name) !== undefined;
+  }
+
+  /**
+   * A window call on app channel `name`, with its arguments, to the core mod that answers it. Unlike a mod's own
+   * channel, it may take as long as it needs and a throw reaches the window as is: neither counts as a strike.
+   */
+  async channel(name: string, args: unknown[]): Promise<unknown> {
+    const r = this.appChannel(name);
+    if (!r) throw new Error(`No mod handles ${name}`);
+    return r.channels.get(name)!(args);
+  }
+
   turnStart(task: TaskRef): Promise<void> {
     return this.each("turnStart", task);
   }
@@ -386,6 +421,43 @@ export class ModHost {
   /** The base or its data changed under the core mods with no task opening or closing (a profile switch, an undo). */
   refresh(): Promise<void> {
     return this.each("refresh", undefined);
+  }
+  /** The base's data changed (a collection write, a plugin's data or on/off; `collection` null for a plugin): the core mods that listen hear it. */
+  dataChanged(collection: string | null): Promise<void> {
+    return this.each("dataChanged", { collection });
+  }
+  /** A history restore touched `paths` (null: the whole folder). */
+  restored(paths: readonly string[] | null): Promise<void> {
+    return this.each("restored", paths);
+  }
+  /** `base` is gone (a folder move, a forgotten profile). */
+  baseGone(base: string): Promise<void> {
+    return this.each("baseGone", base);
+  }
+  /** Task `taskId`'s context record changed: the core mods that listen (`ctx.app.tasks.onContextChanged`) hear it. */
+  contextChanged(taskId: string): Promise<void> {
+    return this.each("contextChanged", taskId);
+  }
+  /**
+   * What the core mods add to `task`'s first or resume message, joined in the order the mods run: texts, items and
+   * the notes to leave out. Each text is cut to its own budget; a section with a bad shape or no budget, null or a
+   * throw adds nothing (a throw is a strike). Null when no mod added anything.
+   */
+  async firstMessage(task: TaskRef): Promise<{ text: string; items: FirstMessageSection["items"][number][]; excluded: Set<string> } | null> {
+    const texts: string[] = [];
+    const items: FirstMessageSection["items"][number][] = [];
+    const excluded = new Set<string>();
+    for (const [r, fn] of this.listeners("firstMessage")) {
+      if (!r.on) continue;
+      const res = await guarded(() => (fn as (t: TaskRef) => FirstMessageSection | null | Promise<FirstMessageSection | null>)(task), this.hookMs);
+      await this.count(r, res.ok, res.ok ? undefined : res.reason);
+      const s = res.ok ? res.value : null;
+      if (!s || typeof s.text !== "string" || !Number.isFinite(s.budgetTokens) || s.budgetTokens <= 0) continue;
+      if (s.text) texts.push(s.text.length > s.budgetTokens * 4 ? s.text.slice(0, s.budgetTokens * 4) : s.text);
+      if (Array.isArray(s.items)) items.push(...s.items);
+      if (Array.isArray(s.excludeNotes)) for (const n of s.excludeNotes) if (typeof n === "string") excluded.add(n);
+    }
+    return texts.length > 0 || items.length > 0 || excluded.size > 0 ? { text: texts.join("\n\n"), items, excluded } : null;
   }
   taskOpen(task: TaskRef): Promise<void> {
     return this.each("taskOpen", task);
@@ -422,7 +494,8 @@ export class ModHost {
 
   async ipc(id: string, name: string, payload: unknown): Promise<{ ok: true; value: unknown } | { ok: false; reason: string }> {
     const r = this.mods.get(id);
-    const handler = r?.on ? r.channels.get(name) : undefined;
+    // An app channel's name (`hh:…`) is never one of a mod's own.
+    const handler = r?.on && !name.startsWith("hh:") ? r.channels.get(name) : undefined;
     if (!r || !handler) return { ok: false, reason: "no such channel" };
     const res = await guarded(() => handler(payload), this.hookMs);
     await this.count(r, res.ok, res.ok ? undefined : res.reason);

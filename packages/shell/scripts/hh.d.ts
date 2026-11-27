@@ -36,6 +36,13 @@ declare module "@humanharness/mod-sdk/_internal/src/layout" {
       core: z.ZodLiteral<"task">;
   }, z.core.$strict>]>;
   export type BlockContent = z.output<typeof blockContentSchema>;
+  /** What an overlay block shows: always a mod's block (the core's task view is not an overlay). */
+  const overlayContentSchema: z.ZodObject<{
+      mod: z.ZodString;
+      block: z.ZodString;
+      props: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
+  }, z.core.$strict>;
+  type OverlayContent = z.output<typeof overlayContentSchema>;
   export type LayoutNode = {
       type: "row" | "column";
       id?: string;
@@ -60,6 +67,7 @@ declare module "@humanharness/mod-sdk/_internal/src/layout" {
       max?: number;
       hidden?: boolean;
       header?: BlockContent;
+      overlay?: OverlayContent[];
       children: LayoutNode[];
   } | {
       type: "block";
@@ -74,9 +82,10 @@ declare module "@humanharness/mod-sdk/_internal/src/layout" {
       hidden?: boolean;
       content: BlockContent;
   };
-  /** A layout file: one tree of nodes whose root is a stack (spec §5.2). Each whole-layout rule has its own message. */
+  /** A layout file: one tree of nodes whose root is a stack (spec §5.2); the root may also have an `overlay`, a list of mod blocks drawn above the whole screen, outside the tree. Overlay blocks count toward the node limit. Each whole-layout rule has its own message. */
   export const layoutSchema: z.ZodType<LayoutNode, unknown, z.core.$ZodTypeInternals<LayoutNode, unknown>>;
   export type Layout = LayoutNode;
+  export {};
 }
 
 declare module "@humanharness/mod-sdk/_internal/src/mod-json" {
@@ -950,7 +959,7 @@ declare module "@humanharness/ui/_internal/src/language-control" {
 
 declare module "@humanharness/ui/_internal/src/layout/app" {
   import type { FolderMove } from "@humanharness/ui/_internal/src/BackupNotice";
-  import type { AppState, EngineStatus, HarnessClient, LimitWindow, SetupStepsState } from "@humanharness/ui/_internal/src/client";
+  import type { AppState, ChatSearchContext, EngineStatus, HarnessClient, LimitWindow, SetupStepsState } from "@humanharness/ui/_internal/src/client";
   import type { LanguageControl } from "@humanharness/ui/_internal/src/language-control";
   import type { SearchIntent } from "@humanharness/ui/_internal/src/search/intent";
   /**
@@ -967,6 +976,12 @@ declare module "@humanharness/ui/_internal/src/layout/app" {
       steps: SetupStepsState | null;
       move: FolderMove;
       language: LanguageControl | undefined;
+      /** The scope open in the window, or null. */
+      openScope: string | null;
+      /** The chat's state, read when asked; null when no chat is on screen. */
+      chatContext(): ChatSearchContext | null;
+      /** Shows a short notice at the foot of the window (it clears itself). */
+      notice(text: string): void;
       /** The ways out of the screen a block may take. */
       nav: {
           start(): void;
@@ -978,6 +993,8 @@ declare module "@humanharness/ui/_internal/src/layout/app" {
       };
   }
   export const AppProvider: import("react").Provider<AppValue | null>;
+  /** The app when there is one: a task view drawn on its own (a setup step, a test) has none. */
+  export const useOptionalApp: () => AppValue | null;
   /** The app, for the layout and its blocks. */
   export function useApp(): AppValue;
 }

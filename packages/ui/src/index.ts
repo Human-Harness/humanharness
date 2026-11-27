@@ -1,4 +1,5 @@
-import { Group, Row, SecondaryPage, SectionHead } from "./guide";
+import { Group, IconButton, Row, SecondaryPage, SectionHead } from "./guide";
+import { Toggle } from "./guide/Toggle";
 export * from "./client";
 export * from "./state";
 export * from "./usage";
@@ -20,7 +21,6 @@ export { LegalInEnglish, useLegalLang } from "./EngineOnboarding";
 export { MaterialPanel, type MaterialPanelProps, useMaterial } from "./MaterialPanel";
 export { PluginSlot } from "./plugins/PluginSlot";
 export { FileTimeline, type FileTimelineProps } from "./FileTimeline";
-export { ContextPanel, type ContextPanelProps } from "./ContextPanel";
 export { FileDiff, type FileDiffProps, type DiffLayout } from "./FileDiff";
 export type { BlockActions, BlockProps, InputContext, InputProps } from "./Message";
 export { AnswerView, InputForm, type InputFormProps } from "./InputForm";
@@ -45,12 +45,20 @@ export { byDay, entryLabel, sameDay } from "./history-labels";
 // Core-only guide pieces for the core mods (not in hh.d.ts).
 export { Button, ICON_NAMES, type IconName, Segmented } from "./task-view/pieces";
 // The History panel's page shell: imported, then exported, so it stays out of hh.d.ts like Settings' pieces below.
-export { SecondaryPage };
+export { IconButton, SecondaryPage };
 // A core mod's Settings tab builds with Settings' own pieces: imported, then exported, so hh-dts (which publishes only
 // `export … from "./guide…"`) keeps them core-only.
 export { Group, Row, SectionHead };
+// The ⌘K palette (a core mod) builds with the guide's switch and the Settings tab list its rows are read from.
+export { Toggle };
+export { searchable, tabLabel, visibleTabs } from "./settings-tabs";
 export { ownName, shownLanguage, systemLanguage } from "./language";
 export { ProfileSwitcher } from "./ProfileSwitcher";
 export { useCurrentWindows } from "./UsageMeter";
+// Settings › Usage (a core mod) builds with the Models tab's rows, the profile helpers and the slot boundary.
+export { QUESTIONS, taskRows } from "./ModelsTab";
+export { shownTitle, useProfiles } from "./ProfileSwitcher";
+export { SlotBoundary } from "./layout/BlockBoundary";
+export { useBlocks } from "./layout/registry";
 export { useTasks } from "./parallel/useTasks";
 export type { SearchIntent } from "./search/intent";

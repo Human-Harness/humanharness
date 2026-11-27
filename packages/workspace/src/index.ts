@@ -22,4 +22,4 @@ export * from "./safe-read";
 export * from "./file-timeline";
 export * from "./file-index";
 export * from "./file-diff";
-export * from "./context";
+export * from "./folder-files";

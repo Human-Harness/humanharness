@@ -3,7 +3,7 @@ import { BrowserWindow, Notification, app, dialog, ipcMain, nativeImage, nativeT
 import { CORE_MODS } from "./mods/core-mods";
 import type { CoreAppParts } from "./mods/core-app";
 import { ConfigStore, historyDir } from "./config";
-import { DEFAULT_LANGUAGE, PROFILE_COLLECTION, hasEnginePresets, hasJobs, hasSecrets, hasTools, languageName, pluginsAccepted, resolveInHarness } from "@humanharness/harness-sdk";
+import { DEFAULT_LANGUAGE, PROFILE_COLLECTION, hasEnginePresets, hasJobs, hasSecrets, contextPanelConfig, hasTools, languageName, pluginsAccepted, resolveInHarness } from "@humanharness/harness-sdk";
 import { MOD_SCHEME } from "./mods/mod-scheme";
 import { PLUGIN_SCHEME, PluginBackendHost } from "./plugin-host";
 import { PLUGIN_STATE_DIR } from "./plugin-state";
@@ -29,7 +29,7 @@ import { buildJobsHost, buildSingleJobs } from "./jobs/jobs-wiring";
 import { buildMaterial, buildMaterialJobs } from "./material-wiring";
 import { buildTaskAttention, keepNotification } from "./task-attention";
 import { buildTranslation } from "./translation";
-import { cleanModels } from "./models";
+import { cleanModels, pinnedBudget } from "./models";
 import { createToolsHost, slotTaskOf } from "./tools/tools-host";
 import defaultLayoutJson from "./mods/default-layout.json";
 import { devDockIcon } from "./dock-icon";
@@ -48,7 +48,7 @@ import path from "node:path";
 import { registerConnectionsIpc } from "./secrets/connections-ipc";
 import { resolveReferences } from "./references";
 import { runFile } from "./plugin-exec";
-import { runningPlugins } from "./search/data-sources";
+import { runningPlugins } from "./plugin-running";
 import { safeAtStart } from "./mods/safe";
 import { saveAppChange } from "./app-change";
 import { shownLayout } from "./mods/layout";
@@ -62,7 +62,7 @@ import type { LifecycleDeps } from "./index";
  * harness declares, the privileged schemes (Electron takes them only before "ready"). index.ts sets `harness` first.
  */
 export async function onLoaded(d: LifecycleDeps): Promise<void> {
-  const { activeScope, baseOf, boardHost, commandDeps, connections, currentBase, currentHistory, dataStoreFor, dataWrites, emit, handle, hasNotice, here, hold, hooks, kickMaterial, materialStageDeps, ownCommits, personData, pickProfile, pluginLog, pluginPanels, readPhaseBrief, refreshDockBadge, runtime, scopeStoreFor, scoped, searchSvc, secretStore, sendToWindow, shellResources, switches, toolsLog, translateEngine, turnBlocked, turns, validConfig, workReferences } = d;
+  const { activeScope, baseOf, boardHost, commandDeps, connections, currentBase, currentHistory, dataStoreFor, dataWrites, emit, handle, hasNotice, here, hold, hooks, kickMaterial, materialStageDeps, ownCommits, personData, pickProfile, search, pluginLog, pluginPanels, readPhaseBrief, refreshDockBadge, runtime, scopeStoreFor, scoped, events, secretStore, sendToWindow, shellResources, switches, toolsLog, translateEngine, turnBlocked, turns, validConfig, workReferences } = d;
   const harness = d.harness;
   app.setName(harness.name);
   app.setPath("userData", hooks.userData ?? path.join(app.getPath("appData"), "Human Harness", harness.id));
@@ -111,6 +111,29 @@ export async function onLoaded(d: LifecycleDeps): Promise<void> {
       const phase = await d.tasks.openPhase();
       return { ...t, ...(phase ? { phase } : {}) };
     },
+    tasks: {
+      contextRecord: (id) => d.tasks.contextRecord(id) as never,
+      addContext: (id, file) => d.tasks.addContext(id, file),
+    },
+    context: {
+      scoped,
+      scopeExists: (id) => activeScope(id),
+      budget: async () => pinnedBudget(cleanModels((await d.config.load()).models), contextPanelConfig(harness)),
+      noteTitles: async (scope) => {
+        const c = await validConfig();
+        if (!c) return new Map<string, string>();
+        const notes = await readNotes(baseOf(c), notesPrefix(scoped(), scope)).catch(() => []);
+        return new Map(notes.map((n) => [n.path, n.title]));
+      },
+      history: () => currentHistory(),
+      trailer: () => d.tasks.trailerNow(),
+      blocked: () => (d.quitting ? "The app is closing" : turnBlocked()),
+      pickFile: async (base) => {
+        if (!d.window || d.window.isDestroyed()) return null;
+        const result = await dialog.showOpenDialog(d.window, { defaultPath: base, properties: ["openFile"] });
+        return result.canceled ? null : (result.filePaths[0] ?? null);
+      },
+    },
     hasNotice,
     engine: getEngine,
     command: async (engine) => hooks.engines?.[engine.id] ?? engineCommand(engine, commandDeps, { sharedPath: hasEnginePresets(harness) }),
@@ -147,6 +170,7 @@ export async function onLoaded(d: LifecycleDeps): Promise<void> {
     // The tag key of imported files sources: in userData, where the agent can't reach it (never in the data folder).
     tagKey: (id, create) => sourceTagKey(path.join(app.getPath("userData"), id, "source-key"), create),
     personData,
+    search,
     // "Save as decision" (sidekick plan Decision 7): a note like any other, written as the person when they press the button.
     saveDecision: async ({ scope, action, title, decision }) => {
       const c = await validConfig();
@@ -239,7 +263,7 @@ export async function onLoaded(d: LifecycleDeps): Promise<void> {
         // A plugin on, off, added or removed: its searchable records come or go (search spec §7). D0 inside. Any
         // other change (a sync time, an error) leaves them as they are.
         const on = runningPlugins(view);
-        if (on !== d.pluginsOn) searchSvc.dataChanged();
+        if (on !== d.pluginsOn) events.dataChanged(null);
         d.pluginsOn = on;
       },
       attentionChanged: (view) => {
@@ -251,7 +275,7 @@ export async function onLoaded(d: LifecycleDeps): Promise<void> {
       panelsNeeded: () => pluginPanels.needed(),
       dataChanged: (plugin, collections) => {
         sendToWindow("hh:pluginData", { plugin, collections });
-        searchSvc.dataChanged();
+        events.dataChanged(null);
       },
       log: pluginLog,
     });
@@ -390,7 +414,7 @@ export async function onLoaded(d: LifecycleDeps): Promise<void> {
       trash: (p) => shell.trashItem(p),
       historyDir: (folder) => historyDir(app.getPath("userData"), folder),
       // Profile ids are reused names: the search index is keyed by the folder's path, so a deleted one's must go.
-      forget: (folder) => searchSvc.discard(folder),
+      forget: (folder) => events.baseGone(folder),
       changed: (state) => sendToWindow("hh:profiles", state),
       blocked: hold.profileChangeBlocked,
     });
@@ -438,7 +462,7 @@ export async function onLoaded(d: LifecycleDeps): Promise<void> {
 
 /** The primary instance (it holds the single-instance lock): "ready", the window, and the quit. */
 export function onPrimary(d: LifecycleDeps): void {
-  const { PAPER, QUIT_TEST_WAIT_MS, activeScope, announceCommits, backendReady, checkTurn, closeRuntime, createWindow, currentBase, currentHistory, dropRuntime, emit, flushTurns, guards, harnessDir, hooks, interruptTasks, jobsReady, jobsWiring, kickMaterial, modsView, notifications, offered, plainTasks, pluginLog, prepareEngine, registerIpc, restores, runtime, runtimeOptions, safeMode, scoped, scopesChanged, searchSvc, sendToWindow, setDockBadge, settleScopes, shellResources, showNotice, singleMainSlot, singleParts, startHomeHistory, startModHost, taskDeps, taskStoreOptions, toolsLog, turnChatLog, turnDeps, turns, validConfig, watchUserLayouts, watchUserMods } = d;
+  const { PAPER, QUIT_TEST_WAIT_MS, activeScope, announceCommits, backendReady, checkTurn, closeRuntime, createWindow, currentBase, currentHistory, dropRuntime, emit, flushTurns, guards, harnessDir, hooks, interruptTasks, jobsReady, jobsWiring, kickMaterial, modsView, notifications, offered, plainTasks, pluginLog, prepareEngine, registerIpc, restores, runtime, runtimeOptions, safeMode, scoped, scopesChanged, events, sendToWindow, setDockBadge, settleScopes, shellResources, showNotice, singleMainSlot, singleParts, startHomeHistory, startModHost, taskDeps, taskStoreOptions, toolsLog, turnChatLog, turnDeps, turns, validConfig, watchUserLayouts, watchUserMods } = d;
   const harness = d.harness;
   app.on("second-instance", () => {
     if (!d.window || d.window.isDestroyed()) return;
@@ -680,7 +704,7 @@ export function onPrimary(d: LifecycleDeps): void {
       // A cancelled or closed turn still writes its reply to the chat: wait for it.
       await flushTurns();
       await flushFileIndexes();
-      await searchSvc.flush().catch(() => undefined);
+      await events.closing();
     })().finally(() => app.quit());
   });
 }

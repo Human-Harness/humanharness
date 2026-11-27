@@ -4,7 +4,7 @@ import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Layout, ModsView } from "../src/client";
 import { type AppValue, AppProvider } from "../src/layout/app";
-import { LayoutView } from "../src/layout/LayoutView";
+import { LayoutOverlay, LayoutView } from "../src/layout/LayoutView";
 import { type BlockProps, ModBlocksProvider, createBlockRegistry, registerBlock, blockFor } from "../src/layout/registry";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
@@ -188,5 +188,44 @@ describe("the default registry", () => {
     expect(blockFor("test-mod", "thing")).toBe(C);
     dispose();
     expect(blockFor("test-mod", "thing")).toBeUndefined();
+  });
+
+  describe("overlay", () => {
+    const Palette = ({ props }: BlockProps) => <p>Palette {String(props.text ?? "")}</p>;
+    const withOverlay = (overlay: unknown): Layout => ({ type: "stack", overlay, children: [{ type: "block", id: "home", content: { mod: "m", block: "label", props: { text: "Home body" } } }, task] }) as Layout;
+
+    it("draws beside Home and the task view, outside the flex tree (HarnessApp mounts it outside the hidden screen, so Settings shows it too)", async () => {
+      const { registry, wrap } = setup();
+      registry.register("m", "label", Label);
+      registry.register("m", "palette", Palette);
+      const layout = withOverlay([{ mod: "m", block: "palette", props: { text: "x" } }]);
+      for (const shown of ["home", "work"]) {
+        cleanup();
+        await renderIn("en", wrap(<><LayoutView layout={layout} shown={shown} task={() => <p>Task body</p>} /><LayoutOverlay layout={layout} /></>), { theme: true });
+        const overlay = document.querySelector<HTMLElement>("[data-layout-overlay]")!;
+        expect(overlay.textContent).toBe("Palette x");
+        expect(overlay.closest("[data-layout]")).toBeNull();
+        expect(screen.getByText(shown === "home" ? "Home body" : "Task body")).toBeTruthy();
+      }
+    });
+
+    it("draws nothing for an off mod and nothing for a missing block", async () => {
+      const { registry, wrap } = setup({ mods: [{ id: "notes", name: "Notes", version: "0.1.0", origin: "core", on: false, ui: false, registers: { hooks: [], ipc: [] } }], problems: [] });
+      registry.register("m", "label", Label);
+      const layout = withOverlay([{ mod: "notes", block: "palette" }, { mod: "m", block: "nope" }]);
+      await renderIn("en", wrap(<><LayoutView layout={layout} shown="home" task={() => null} /><LayoutOverlay layout={layout} /></>), { theme: true });
+      await screen.findByText("Home body");
+      expect(screen.queryByText("Mod Notes is off")).toBeNull();
+      expect(screen.queryByText(/missing|Turn on/i)).toBeNull();
+      expect(document.querySelector("[data-layout-overlay]")?.textContent ?? "").toBe("");
+    });
+
+    it("a layout without overlay renders no overlay element", async () => {
+      const { registry, wrap } = setup();
+      registry.register("m", "label", Label);
+      const layout: Layout = { type: "stack", children: [block("home", "m", "label", { text: "Home body" }), task] };
+      await renderIn("en", wrap(<LayoutView layout={layout} shown="home" task={() => null} />), { theme: true });
+      expect(document.querySelector("[data-layout-overlay]")).toBeNull();
+    });
   });
 });

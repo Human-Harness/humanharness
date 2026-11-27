@@ -4,6 +4,7 @@ import { type ModLoaderOptions, ModBlocksProvider, createBlockRegistry, startMod
 import home from "../../home/src/ui";
 import { renderIn as uiRenderIn } from "../../../ui/test/render";
 import sidekick from "../src/ui";
+import usage from "../../usage/src/ui";
 
 /** No mods beyond the core's: the loader only runs the core mods' ui. */
 const noMods = {
@@ -16,7 +17,7 @@ const noMods = {
  */
 function withCoreMods() {
   const registry = createBlockRegistry();
-  startModLoader({ client: noMods, registry, core: [home, sidekick] });
+  startModLoader({ client: noMods, registry, core: [home, sidekick, usage] });
   return ({ children }: { children: ReactNode }) => createElement(ModBlocksProvider, { registry, children });
 }
 

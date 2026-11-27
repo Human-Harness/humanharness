@@ -158,6 +158,8 @@ export interface TaskDeps {
   instructionsSize?(): Promise<number | null>;
   /** Pins and exclusions for a new task in `scope` (context-panel spec §4). Absent: none (D0). */
   personContext?(scope: string): Promise<PersonContext>;
+  /** What the mods' `on.firstMessage` hooks add, in the pins' slot. Absent or null: nothing (D0). */
+  modContext?(task: { id: string; action?: string; scope: string }): Promise<ModContext | null>;
   /** The open task's context record changed (its start, reads or compaction): the panel refreshes. */
   contextChanged?(taskId: string): void;
   /** The folder the agent works in, to turn read paths into folder paths (context-panel spec §3.2). Absent: file names only. */
@@ -324,6 +326,12 @@ export class ScopeRequired extends Error {
     super("Open a scope first");
     this.name = "ScopeRequired";
   }
+}
+
+export interface ModContext {
+  text: string;
+  items: ContextItem[];
+  excluded: ReadonlySet<string>;
 }
 
 /** The person's pins and exclusions for a new task (context-panel spec §4): what the first message gets from them. */
@@ -1068,7 +1076,7 @@ export class TaskManager {
     scope: string,
     action: string | undefined,
     policy: ContextPolicy,
-    extra: { prepared?: { text: string; items: ContextItem[] }; instructions?: string } = {},
+    extra: { prepared?: { text: string; items: ContextItem[] }; instructions?: string; task?: { id: string } } = {},
   ): Promise<{ text: string; items: ContextItem[] }> {
     const plan = policy.start({
       scoped: !!this.d.scoped,
@@ -1084,11 +1092,16 @@ export class TaskManager {
             return null;
           })
         : null;
+    const mod =
+      this.d.modContext && extra.task && (has("notes") || has("app-notes") || has("pins"))
+        ? await this.d.modContext({ id: extra.task.id, action, scope }).catch((err: unknown) => (console.error("mods' context", err), null))
+        : null;
+    const excluded = mod?.excluded.size ? new Set([...(person?.excluded ?? []), ...mod.excluded]) : person?.excluded;
     // Both indexes leave the excluded notes out (context-panel spec §4.3); nothing excluded: the options as before (D0).
     // Built as a job run's first message builds them (notes-index.ts).
     const notes =
       has("notes") || has("app-notes")
-        ? await notesIndexParts((s) => this.d.notes(s), !!this.d.scoped, scope, person?.excluded, has("app-notes") ? (budget("app-notes") ?? APP_INDEX_TOKENS) : null, has("notes"))
+        ? await notesIndexParts((s) => this.d.notes(s), !!this.d.scoped, scope, excluded, has("app-notes") ? (budget("app-notes") ?? APP_INDEX_TOKENS) : null, has("notes"))
         : null;
     const parts: string[] = [];
     const items: ContextItem[] = [];
@@ -1106,13 +1119,13 @@ export class TaskManager {
         case "notes":
           if (notes) {
             parts.push(notes.own.index);
-            if (notes.own.index) items.push(indexItem("notes", "notes-index", "Notes", notes.own.index, notes.own.notes, person?.excluded));
+            if (notes.own.index) items.push(indexItem("notes", "notes-index", "Notes", notes.own.index, notes.own.notes, excluded));
           }
           break;
         case "app-notes":
           if (notes?.app) {
             parts.push(notes.app.index);
-            if (notes.app.index) items.push(indexItem("app-notes", "app-notes-index", "App-wide notes", notes.app.index, notes.app.notes, person?.excluded));
+            if (notes.app.index) items.push(indexItem("app-notes", "app-notes-index", "App-wide notes", notes.app.index, notes.app.notes, excluded));
           }
           break;
         case "data": {
@@ -1144,6 +1157,8 @@ export class TaskManager {
             parts.push(person.pinned);
             items.push(...person.items);
           }
+          if (mod?.text) parts.push(mod.text);
+          items.push(...(mod?.items ?? []));
           break;
         case "material": {
           if (!this.d.materialContext) break;
@@ -1773,7 +1788,7 @@ export class TaskManager {
     // A task pinned to an engine config gets its instructions back with it (Decision 2); none otherwise (D0).
     const pinned = c.engineHash !== undefined ? await this.turnPreset(c) : null;
     // The plan of the task's own context policy, fixed when it began (replaceable-parts §8).
-    const { text: notesIndex, items } = await this.contextFor(scopeOfTask(c), c.action, this.contextPolicyOf(c), { instructions: pinned?.instructions ?? "" });
+    const { text: notesIndex, items } = await this.contextFor(scopeOfTask(c), c.action, this.contextPolicyOf(c), { instructions: pinned?.instructions ?? "", task: { id: c.id } });
     const message = resumeMessage({
       language,
       notesIndex,
@@ -1865,6 +1880,7 @@ export class TaskManager {
     const { text: context, items } = await this.contextFor(scope, task.action, contextPolicy(policies?.context), {
       ...(prepared && (prepared.text || prepared.items.length > 0) ? { prepared } : {}),
       instructions: preset?.instructions ?? "",
+      task: { id },
     });
     const first = message(context);
     const briefLabel = task.review !== undefined ? "Review round" : task.action !== undefined ? "Task brief" : "Question";

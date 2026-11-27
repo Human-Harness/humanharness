@@ -22,6 +22,7 @@ import {
   allBlocks,
   blockToolName,
   dataCollections,
+  contextPanelConfig,
   hasModes,
   hasPre,
   hasTools,
@@ -53,12 +54,12 @@ import {
   memoise,
   nearestTier,
   pinnedBudget,
-  pinnedContext,
   resolveReferences,
   saveAnswerRecords,
   sharedConfigDir,
   usageRecord,
 } from "@humanharness/shell/tasks";
+import { pinnedContext } from "@humanharness/mod-context-panel/pins";
 import {
   APP_SCOPE,
   DataError,
@@ -406,7 +407,7 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
       const stat = await fs.stat(path.join(folder, "AGENTS.md")).catch(() => null);
       return stat?.isFile() ? stat.size : null;
     },
-    personContext: (scope: string) => pinnedContext(folder, scoped && scope !== APP_SCOPE ? [scope, APP_SCOPE] : [scope], pinnedBudget({}, harness.context)),
+    personContext: (scope: string) => pinnedContext(folder, scoped && scope !== APP_SCOPE ? [scope, APP_SCOPE] : [scope], pinnedBudget({}, contextPanelConfig(harness))),
     folder: async () => folder,
     scoped,
     scopeExists: async (id) => (await scopes.list()).some((s) => s.id === id && !s.archived),

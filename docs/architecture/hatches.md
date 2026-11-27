@@ -85,7 +85,7 @@ A turn carries a `TurnScope` (`packages/engines/src/contract.ts`): `{ linked: Li
 
 **`AGENTS.md`** (`instructions.ts`, `linkedFolderLines`). In plain and single mode the managed section gains "### Folders of this scope" for the open scope, after the references: one line per folder, `` - `key` (Label, read and write): `path` `` (line breaks and hidden characters folded, a backtick becomes `'`). The rule "Work only inside this folder." becomes "Work only inside this folder and the folders of this scope listed below." only when the section is there. `RuntimeOptions.instructionLinked` is read at create and on every `refreshInstructions`; `LinkedInstructions` marks it stale on a link change or a scope switch, rewrites it once no task is open, and retries in `betweenTasks` when a running turn refused the rewrite.
 
-**Board mode** (Decision 6). Lanes can run in different scopes at once while `AGENTS.md` is shared, so the managed section lists no folders and each task's first message carries the same section for its own scope (`TaskDeps.linkedContext`), shown in the context panel as the "Folders of this scope" item (kind `linked-folders`, `context.md`). A scoped job gets its scope's `TurnScope` and section too (`jobScope`, `JobRunDeps.scopeAccess`).
+**Board mode** (Decision 6). Lanes can run in different scopes at once while `AGENTS.md` is shared, so the managed section lists no folders and each task's first message carries the same section for its own scope (`TaskDeps.linkedContext`), shown in the context panel as the "Folders of this scope" item (kind `linked-folders`, `packages/mods/context-panel/README.md`). A scoped job gets its scope's `TurnScope` and section too (`jobScope`, `JobRunDeps.scopeAccess`).
 
 ### History
 

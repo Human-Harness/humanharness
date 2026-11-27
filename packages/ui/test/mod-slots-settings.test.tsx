@@ -8,10 +8,10 @@ import { type ModsView } from "../src/client";
 import { type BlockRegistry, ModBlocksProvider, type RowProps, type SettingsAppProps, type SettingsTabProps, appRegistry, createBlockRegistry } from "../src/layout/registry";
 import { type UiCtx, startModLoader } from "../src/layout/mod-loader";
 import { ModelsTab } from "../src/ModelsTab";
-import { commandRows } from "../src/search/local";
+import { commandRows } from "../../mods/search/src/local";
 import { SettingsPage } from "../src/SettingsPage";
 import { tabLabel, visibleTabs } from "../src/settings-tabs";
-import { UsageTab } from "../src/UsageTab";
+import { UsageTab } from "../../mods/usage/src/UsageTab";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
 

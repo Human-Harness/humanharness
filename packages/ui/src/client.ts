@@ -28,6 +28,7 @@ export type Layout = LayoutView["layout"];
 /** The core's own layout, as the shell ships it: Home, and the work screen holding the task. */
 export const CORE_LAYOUT: Layout = {
   type: "stack",
+  overlay: [{ mod: "search", block: "palette" }],
   children: [
     { type: "block", id: "home", content: { mod: "home", block: "home" } },
     { type: "block", id: "work", content: { core: "task" } },

@@ -16,6 +16,7 @@ import type {
   ToolCallView,
   ToolsInfo,
   ConnectionsView,
+  ContextApi,
   ContextPick,
   ContextResult,
   DataChangeView,
@@ -142,6 +143,10 @@ export interface FakeBackend extends BackendClient {
   call: Mock<BackendClient["call"]>;
   restart: Mock<BackendClient["restart"]>;
 }
+
+/** The client built last: the test stand-in for the mod ipc a core mod's ui reaches its main by (see `context-panel-mod.tsx`). */
+let newest: FakeClient | null = null;
+export const newestFakeClient = (): FakeClient | null => newest;
 
 export class FakeClient implements HarnessClient {
   state: AppState;
@@ -407,6 +412,7 @@ export class FakeClient implements HarnessClient {
   private setupListeners = new Set<(o: SetupOutput) => void>();
 
   constructor(config: AppConfig = {}) {
+    newest = this;
     this.state = {
       harness: {
         id: "demo",
@@ -862,15 +868,18 @@ export class FakeClient implements HarnessClient {
   contextAnswer: ContextResult = { ok: true };
   contextGate: Promise<void> | null = null;
   pickAnswer: ContextPick = { ok: false, reason: "cancelled" };
+  /** The mod ipc's `changed` push, as the context panel mod hears it (`contextApi` over `ctx.on`). */
+  contextPushes = new Set<(m: unknown) => void>();
   private contextListeners = new Set<{ task: string; listener: (c: TaskContext) => void }>();
 
   /** As main's `hh:context`: the task's panel gets `c`. */
   emitContext(task: string, c: TaskContext): void {
     this.contexts[task] = c;
+    for (const l of [...this.contextPushes]) l({ task, context: c });
     for (const l of [...this.contextListeners]) if (l.task === task) l.listener(c);
   }
 
-  context: HarnessClient["context"] = {
+  context: ContextApi = {
     get: async (taskId) => (Object.hasOwn(this.contexts, taskId) ? { ok: true, context: this.contexts[taskId] } : { ok: false, reason: "no-task" }),
     onChange: (task, listener) => {
       const entry = { task, listener };
@@ -898,8 +907,9 @@ export class FakeClient implements HarnessClient {
   private searchOpeners = new Set<(query?: string) => void>();
   private searchStatusListeners = new Set<(s: SearchStatus) => void>();
   private searchRecords = new Map<string, (key: string | number | null, scope: string) => void>();
-  readonly search: SearchClient = {
-    query: async (query, filters) => {
+  /** The search mod's ipc as its ui sees it (`searchApi`): what main answers in the app. */
+  readonly searchApi = {
+    query: async (query: string, filters?: SearchFilters): Promise<SearchAnswer> => {
       this.searchCalls.push({ query, ...(filters ? { filters } : {}) });
       return (
         this.searchAnswers[query] ?? {
@@ -914,14 +924,16 @@ export class FakeClient implements HarnessClient {
         }
       );
     },
-    opened: async (hit) => {
+    opened: async (hit: SearchHitView) => {
       this.searchOpened.push(hit);
       return { ok: true };
     },
-    onStatus: (l) => {
+    onStatus: (l: (s: SearchStatus) => void) => {
       this.searchStatusListeners.add(l);
       return () => void this.searchStatusListeners.delete(l);
     },
+  };
+  readonly search: SearchClient = {
     open: (query) => {
       for (const l of this.searchOpeners) l(query);
     },

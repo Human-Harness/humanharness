@@ -3,7 +3,7 @@ import path from "node:path";
 import type { ModelProfile } from "@humanharness/engines";
 import { DEFAULT_LANGUAGE, type LoadedHarness, hasExpects, hasModes, hasPre, inputBlocks, interviewCollections, resolveInHarness } from "@humanharness/harness-sdk";
 import { type PickInput, modelPolicy } from "@humanharness/policies";
-import type { ConfiguredApp } from "@humanharness/protocol";
+import type { ConfiguredApp, ContextItem } from "@humanharness/protocol";
 import type { PushChannel } from "@humanharness/protocol/channels";
 import type { EnginePreset, HarnessRuntime } from "@humanharness/runtime";
 import {
@@ -21,7 +21,6 @@ import { notePath, saveAppChange } from "./app-change";
 import type { BoardHost } from "./board-host";
 import { ChatLog } from "./chat-log";
 import type { ConfigStore } from "./config";
-import type { ContextService } from "./context";
 import { saveAnswerRecords } from "./data-requests";
 import type { EngineHost } from "./engine-config/engine-host";
 import type { Turns } from "./gated-turns";
@@ -118,7 +117,6 @@ export interface TaskDepsDeps {
   host(): BoardHost | null;
   /** The open task(s): a TaskManager, or board mode's TaskBoard. */
   tasks(): Pick<TaskManager, "runningTask">;
-  contextSvc(): ContextService;
   engineHost(): EngineHost | undefined;
   linked(): LinkedParts;
   validConfig(): Promise<ConfiguredApp | null>;
@@ -128,7 +126,6 @@ export interface TaskDepsDeps {
   activeScope(id: string): Promise<boolean>;
   dataStoreFor(base: string): DataStore;
   materialStore(base: string, scope: string): MaterialStore;
-  sendContext(task: string): Promise<void>;
   closeRuntime(): Promise<void>;
   readPhaseBrief(action: string, phase: string): Promise<string>;
   sendToWindow(channel: PushChannel, value: unknown): void;
@@ -151,7 +148,6 @@ export function createTaskDeps(d: TaskDepsDeps): TaskDeps {
     activeScope,
     dataStoreFor,
     materialStore,
-    sendContext,
     closeRuntime,
     readPhaseBrief,
     sendToWindow,
@@ -243,9 +239,18 @@ export function createTaskDeps(d: TaskDepsDeps): TaskDeps {
       const stat = await fs.stat(path.join(baseOf(c), "AGENTS.md")).catch(() => null);
       return stat?.isFile() ? stat.size : null;
     },
-    // Pins and exclusions for a new task (spec §4); `contextSvc` is built below, before any task can start.
-    personContext: (scope) => d.contextSvc().personContext(scope),
-    contextChanged: (id) => void sendContext(id),
+    contextChanged: (id) => {
+      void d.modHost()?.contextChanged(id);
+    },
+    // The core mods' `on.firstMessage` sections, in the pins' slot. A getter: undefined while no mod registered it (D0).
+    get modContext() {
+      const mods = d.modHost();
+      if (!mods?.registered("firstMessage")) return undefined;
+      return async (task: { id: string; action?: string; scope: string }) => {
+        const r = await mods.firstMessage(task);
+        return r ? { text: r.text, items: r.items as unknown as ContextItem[], excluded: r.excluded } : null;
+      };
+    },
     // The agent's working folder: the engine's read paths become folder paths (spec §3.2).
     folder: async () => {
       const c = await validConfig();

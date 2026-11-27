@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { collectionSchema, z } from "@humanharness/harness-sdk";
 import { APP_SCOPE, DataStore, dataMetaFile } from "@humanharness/workspace";
-import { harnessRows, harnessSources } from "../src/main/search/data-sources";
+import { harnessRows, harnessSources } from "../src/data-sources";
 
 const collections = {
   people: collectionSchema.parse({ scoped: false, key: "id", agent: "none", schema: z.object({ id: z.string(), name: z.string(), bio: z.string() }), search: { title: "name", text: "bio" } }),

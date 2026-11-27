@@ -4,7 +4,6 @@ import { app, clipboard, dialog, shell } from "electron";
 import { electronLauncher } from "@humanharness/blocks";
 import { hasBackend, hasEnginePresets, hasLinkedFolders } from "@humanharness/harness-sdk";
 import { flushFileIndexes } from "@humanharness/workspace";
-import { searchHandlers } from "./search/ipc";
 import { languageHandlers } from "./language-ipc";
 import { chooseModeHandler } from "./mode-ipc";
 import { setPhaseHandler } from "./phase-ipc";
@@ -210,7 +209,6 @@ export function registerAppIpc(d: LifecycleDeps): void {
   d.handleAll(reviewHandlers(d.reviews, () => d.harness.permissions.edit === "folder"));
   // File timelines (file-timeline spec §6.3): every harness (Q1); every answer is data.
   d.handleAll(fileHandlers(d.fileTimelines));
-  d.handleAll(searchHandlers(d.searchSvc));
   // Language on demand (plan 5b): every answer is data; the state is pushed on hh:language.
   if (d.translation) d.handleAll(languageHandlers(d.translation));
   // Cancels the turn and stops the task operation (a closing turn never goes on to the next task).

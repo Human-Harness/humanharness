@@ -29,6 +29,8 @@ export interface CoreAppParts {
   };
   /** The context panel's needs (`ctx.app.context`). */
   context: CoreApp["context"];
+  /** Global search's needs (`ctx.app.search`). */
+  search: CoreApp["search"];
   hasNotice(engineId: string): Promise<boolean>;
   engine(engineId: string): EngineDef;
   command(engine: EngineDef): Promise<{ command: string[]; env: Record<string, string> } | null>;
@@ -71,6 +73,7 @@ export function coreAppFor(p: CoreAppParts, id: string): CoreApp {
       onContextChanged: () => () => {},
     },
     context: p.context,
+    search: p.search,
     sessions: {
       hasNotice: (engineId) => p.hasNotice(engineId),
       command: (engineId) => p.command(p.engine(engineId)),

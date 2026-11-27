@@ -3,8 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LiveIndex } from "@humanharness/search";
-import { type BuildMessage, build } from "../src/main/search/build";
-import { IndexStore, type Snapshot, searchDir } from "../src/main/search/store";
+import { type BuildMessage, build } from "../src/build";
+import { IndexStore, type Snapshot, searchDir } from "../src/store";
 
 let userData: string;
 beforeEach(() => {

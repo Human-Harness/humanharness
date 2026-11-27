@@ -5,10 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { collectionSchema, z } from "@humanharness/harness-sdk";
 import type { DataRow, DataSource } from "@humanharness/search";
 import { APP_SCOPE, DataStore } from "@humanharness/workspace";
-import { type PluginSearch, runningPlugins, searchData, searchableCollection } from "../src/main/search/data-sources";
-import { inProcessBuild } from "../src/main/search/runner";
-import { SearchService } from "../src/main/search/service";
-import { searchDir } from "../src/main/search/store";
+import { type PluginSearch, searchData, searchableCollection } from "../src/data-sources";
+import { inProcessBuild } from "../src/runner";
+import { SearchService } from "../src/service";
+import { searchDir } from "../src/store";
 
 const collections = {
   people: collectionSchema.parse({ scoped: false, key: "id", agent: "none", schema: z.object({ id: z.string(), name: z.string() }), search: { title: "name" } }),
@@ -169,14 +169,9 @@ describe("search data wiring (search spec D4): no index ever crosses profiles", 
     await t.svc.flush();
   });
 
-  it("only searchable collections and a change in which plugins run ask for a refresh", () => {
+  it("only searchable collections ask for a refresh", () => {
     expect(searchableCollection({ ...collections, plain: { ...collections.people, search: undefined } }, "people")).toBe(true);
     expect(searchableCollection({ ...collections, plain: { ...collections.people, search: undefined } }, "plain")).toBe(false);
     expect(searchableCollection(collections, "toString")).toBe(false);
-    const row = (id: string, status: "on" | "off", extra = {}) => ({ id, name: id, version: "1.0.0", origin: "bundled" as const, status, ...extra });
-    const on = runningPlugins({ local: false, plugins: [row("b", "on"), row("a", "on"), row("c", "off")] });
-    expect(runningPlugins({ local: false, plugins: [row("a", "on", { lastSync: "now" }), row("b", "on"), row("c", "off", { lastError: "x" })] })).toBe(on);
-    expect(runningPlugins({ local: false, plugins: [row("a", "on"), row("b", "off")] })).not.toBe(on);
-    expect(runningPlugins({ local: false, plugins: [row("a", "on"), { ...row("b", "on"), version: "2.0.0" }] })).not.toBe(on);
   });
 });

@@ -2,8 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { workerBuild } from "../src/main/search/runner";
-import { SearchService } from "../src/main/search/service";
+import { workerBuild } from "../src/runner";
+import { SearchService } from "../src/service";
 
 // Opt-in (plan deviation 19): HH_SEARCH_BUDGET=1 corepack pnpm vitest run packages/shell/test/search-budget.test.ts
 // HH_SEARCH_BUDGET_DIR=<folder> measures a real folder (the demo's, a large repo) instead of the generated one.

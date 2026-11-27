@@ -48,7 +48,7 @@ import path from "node:path";
 import { registerConnectionsIpc } from "./secrets/connections-ipc";
 import { resolveReferences } from "./references";
 import { runFile } from "./plugin-exec";
-import { runningPlugins } from "./search/data-sources";
+import { runningPlugins } from "./plugin-running";
 import { safeAtStart } from "./mods/safe";
 import { saveAppChange } from "./app-change";
 import { shownLayout } from "./mods/layout";
@@ -62,7 +62,7 @@ import type { LifecycleDeps } from "./index";
  * harness declares, the privileged schemes (Electron takes them only before "ready"). index.ts sets `harness` first.
  */
 export async function onLoaded(d: LifecycleDeps): Promise<void> {
-  const { activeScope, baseOf, boardHost, commandDeps, connections, currentBase, currentHistory, dataStoreFor, dataWrites, emit, handle, hasNotice, here, hold, hooks, kickMaterial, materialStageDeps, ownCommits, personData, pickProfile, pluginLog, pluginPanels, readPhaseBrief, refreshDockBadge, runtime, scopeStoreFor, scoped, events, secretStore, sendToWindow, shellResources, switches, toolsLog, translateEngine, turnBlocked, turns, validConfig, workReferences } = d;
+  const { activeScope, baseOf, boardHost, commandDeps, connections, currentBase, currentHistory, dataStoreFor, dataWrites, emit, handle, hasNotice, here, hold, hooks, kickMaterial, materialStageDeps, ownCommits, personData, pickProfile, search, pluginLog, pluginPanels, readPhaseBrief, refreshDockBadge, runtime, scopeStoreFor, scoped, events, secretStore, sendToWindow, shellResources, switches, toolsLog, translateEngine, turnBlocked, turns, validConfig, workReferences } = d;
   const harness = d.harness;
   app.setName(harness.name);
   app.setPath("userData", hooks.userData ?? path.join(app.getPath("appData"), "Human Harness", harness.id));
@@ -170,6 +170,7 @@ export async function onLoaded(d: LifecycleDeps): Promise<void> {
     // The tag key of imported files sources: in userData, where the agent can't reach it (never in the data folder).
     tagKey: (id, create) => sourceTagKey(path.join(app.getPath("userData"), id, "source-key"), create),
     personData,
+    search,
     // "Save as decision" (sidekick plan Decision 7): a note like any other, written as the person when they press the button.
     saveDecision: async ({ scope, action, title, decision }) => {
       const c = await validConfig();

@@ -91,3 +91,14 @@ export function fenceFor(text: string): string {
   }
   return "`".repeat(Math.max(3, longest + 1));
 }
+
+/** Whether `dir` is the home folder, a dot-folder directly in it, or inside one. Without case (macOS is usually case-insensitive). */
+export function homeOrDotFolder(dir: string, home: string): boolean {
+  const norm = (p: string) => path.resolve(p).toLowerCase();
+  const rel = path.relative(norm(home), norm(dir));
+  if (rel === "") return true;
+  const first = rel.split(path.sep)[0];
+  // Outside the home folder: not this rule's concern.
+  if (first === ".." || path.isAbsolute(rel)) return false;
+  return first.startsWith(".");
+}

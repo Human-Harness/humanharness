@@ -128,6 +128,38 @@ export interface CoreApp {
     /** The system dialog at `base`: the absolute file picked, or null. */
     pickFile(base: string): Promise<string | null>;
   };
+  /**
+   * What global search's mod needs of the app: the places the index reads and the records it indexes. Typed loosely
+   * (the mod casts to `@humanharness/search`'s types), so `mod-sdk` takes no dependency on the index library.
+   */
+  readonly search: {
+    /** The app's private data folder; the index's cache lives under it. */
+    userData(): string;
+    /** The open task's scope; null when none. */
+    openScope(): Promise<string | null>;
+    /** Scope id → title. */
+    scopeTitles(): Promise<Map<string, string>>;
+    /** The harness's reference folders (absolute paths never leave main). */
+    references(): Promise<{ id: string; label: string; path: string }[]>;
+    /** What search finds among the tasks, read now: the actions, the open task and past tasks (the mod makes documents of them). */
+    tasks(): Promise<{
+      actions: { id: string; label: string; description?: string; tier?: string; status?: string; scope: string }[];
+      open: { id: string; title: string; scope: string } | null;
+      past: { id: string; title: string; scope: string; at: number }[];
+    }>;
+    /** The engine's generated instructions file, never indexed. */
+    extraDenied(): Promise<string[]>;
+    /** "Show in Finder" for `file`, checked inside `roots`. */
+    reveal(file: string, roots: string[]): Promise<boolean>;
+    /** The harness's data collections (raw), keyed by name. */
+    collections(): Record<string, unknown>;
+    /** The base's scopes that are not archived. */
+    scopes(base: string): Promise<string[]>;
+    /** The base's one data store (`readAll`, `changedAt`). */
+    store(base: string): unknown;
+    /** The plugins controller's search side; null without one. */
+    plugins(): unknown;
+  };
   readonly sessions: {
     /** Whether the person accepted the engine's notice. */
     hasNotice(engineId: string): Promise<boolean>;

@@ -23,6 +23,7 @@
     "@humanharness/mod-history-view": "workspace:*",
     "@humanharness/mod-usage": "workspace:*",
     "@humanharness/mod-home": "workspace:*",
+    "@humanharness/mod-search": "workspace:*",
     "@humanharness/mod-sdk": "workspace:*",
     "@humanharness/mod-sidekick": "workspace:*",
     "@humanharness/i18n": "workspace:*",

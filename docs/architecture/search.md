@@ -13,10 +13,10 @@ unless the person sends a ⌘Enter question, and that text holds titles and path
   the content check (`secrets.ts`), the `minisearch` options (`options.ts`), the query and its ranking (`query.ts`),
   snippet windows with marks (`snippet.ts`), the heading slug above a match (`anchor.ts`, the reader's own slugger) and
   `LiveIndex` (`live-index.ts`), which implements the spec's `SearchIndex` seam (D6).
-- `packages/shell/src/main/search/`: the folder walk (`walk.ts`), safe reads (`read.ts`), the build (`build.ts`), run in
-  a `worker_threads` worker (`worker.ts`, `runner.ts`, built as `out/main/search-worker.js` beside `diff-worker.js`), the
+- `packages/mods/search/src/` (the core mod `search`, main side): the folder walk (`walk.ts`), safe reads (`read.ts`), the build (`build.ts`), run in
+  a `worker_threads` worker (`worker.ts`, `runner.ts`, built as `worker.js` beside the mod's `main.js`), the
   snapshot (`store.ts`), the service (`service.ts`), hits to the window's view model (`views.ts`) and the handlers
-  (`ipc.ts`). `main/index.ts` creates the service with its dependencies: the base, scopes, references, the engine's
+  (`ipc.ts`). The mod (`main.ts`) creates the service from `ctx.app.search`, with its dependencies: the base, scopes, references, the engine's
   instructions file, the tasks built in memory, and "Show in Finder".
 - `packages/protocol`: the view types (`SearchHitView`, `SearchTarget`, `SearchStatus`, `SearchAnswer`…),
   `SearchClient` as `HarnessClient.search`, and three channels: `hh:search(query, filters)` and `hh:searchOpen(hit)`
@@ -182,7 +182,7 @@ See the plan's "Deviations from the spec" (`docs/superpowers/plans/2026-10-30-gl
   object, so an unknown setting is refused). Harness: zod field names (`collectionSchema`); plugin: JSON schema property
   names and an optional `panel`, which must be a declared panel (`pluginManifestSchema`; `pluginCollections` drops
   `panel` before the data model's check). Main lists the sources (`searchData` in
-  `packages/shell/src/main/search/data-sources.ts`): `harness:<folder>/<collection>` (an app-wide collection in `_app`,
+  `packages/mods/search/src/data-sources.ts`): `harness:<folder>/<collection>` (an app-wide collection in `_app`,
   a scoped one in each scope that isn't archived, `main` without scopes) and `plugin:<plugin>/<collection>` for each
   running plugin (`PluginsController.searchSources`). Each source's stamp (`sourceStamp`, `stamp.ts`) is the size and
   mtime of its records file and of its meta file (a store writes the records, then when each changed) plus a hash of

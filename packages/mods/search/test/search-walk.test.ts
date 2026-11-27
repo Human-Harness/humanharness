@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GitIgnore } from "@humanharness/search";
-import { statPaths, walkRoot } from "../src/main/search/walk";
+import { statPaths, walkRoot } from "../src/walk";
 
 let root: string;
 let outside: string;

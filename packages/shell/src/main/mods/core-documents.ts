@@ -2,7 +2,7 @@
 // today, as the documents mod will make them.
 import path from "node:path";
 import type { CoreApp } from "@humanharness/mod-sdk/core";
-import type { LoadedHarness } from "@humanharness/harness-sdk";
+import { type LoadedHarness, documentsConfig } from "@humanharness/harness-sdk";
 import type { ConfiguredApp } from "@humanharness/protocol";
 import type { History } from "@humanharness/workspace";
 import { openRoots } from "../open-path";
@@ -18,7 +18,7 @@ export interface CoreDocumentsDeps {
   quitting(): boolean;
   turnBlocked(): string | null;
   actions(): Record<string, { label: string }>;
-  harness(): Pick<LoadedHarness, "permissions" | "documents">;
+  harness(): Pick<LoadedHarness, "permissions" | "mods">;
   /** The folder of the built main process. */
   here: string;
 }
@@ -32,7 +32,7 @@ export function actionLabelOf(actions: Record<string, { label: string }>, id: st
 export function coreDocuments(d: CoreDocumentsDeps): CoreApp["documents"] {
   return {
     canEdit: () => d.harness().permissions.edit === "folder",
-    kinds: () => d.harness().documents?.kinds ?? {},
+    kinds: () => documentsConfig(d.harness())?.kinds ?? {},
     async folder() {
       const c = await d.validConfig();
       if (!c) return null;

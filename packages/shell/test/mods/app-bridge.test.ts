@@ -68,9 +68,9 @@ describe("ctx.app.documents", () => {
     expect(ctx.app.documents.canEdit()).toBe(false);
     expect(ctx.app.documents.kinds()).toEqual({});
     const kinds = { adr: { when: "A decision.", sections: ["Status"] } };
-    harness = { permissions: { edit: "folder" }, documents: { kinds } };
+    harness = { permissions: { edit: "folder" }, mods: { documents: { kinds } } };
     expect(ctx.app.documents.canEdit()).toBe(true);
-    expect(ctx.app.documents.kinds()).toBe(kinds);
+    expect(ctx.app.documents.kinds()).toEqual(kinds);
   });
 
   it("before setup there is no folder", async () => {

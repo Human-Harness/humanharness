@@ -16,11 +16,12 @@ function closePanels(registry: BlockRegistry): void {
 }
 
 /** A mod's open panel in the reader's slot. Opened again, it stays mounted and gets the new props. */
-export function SidePanel({ entry, ...app }: Omit<PanelProps, "props"> & { entry: Slots["openPanel"] }) {
+export function SidePanel({ entry, onError, ...app }: Omit<PanelProps, "props"> & { entry: Slots["openPanel"]; onError(mod: string): void }) {
   return createElement(SlotBoundary, {
     key: entry.mod,
     mod: entry.mod,
     client: app.client,
+    onError: () => onError(entry.mod),
     children: createElement(entry.Component, { ...app, props: entry.props }),
   });
 }
@@ -59,7 +60,11 @@ export function useReaderSlot(options: Options) {
   /** What had focus when the slot opened from the chat (a card, a link): it gets focus back when the slot closes. */
   const opener = useRef<HTMLElement | null>(null);
   const panel = registry.slot("openPanel").at(-1);
-  const quiet = registry.slot("quiet").length > 0;
+  /** The mod whose panel threw: the failed part stands in the slot, until the slot lets go of it. */
+  const [failedMod, setFailedMod] = useState<string | undefined>(undefined);
+  const failed = panel !== undefined && panel.mod === failedMod;
+  const held = registry.slot("quiet").length > 0;
+  const quiet = held && !failed;
   const isQuiet = () => registry.slot("quiet").length > 0;
   /** What quiet mode held back, told in one line on leaving. */
   const paused = useRef<Paused>(NO_PAUSED);
@@ -160,9 +165,20 @@ export function useReaderSlot(options: Options) {
     endQuiet(registry);
   }, [registry]);
 
+  const panelFailed = useCallback((mod: string) => {
+    setFailedMod(mod);
+    setReaderFull(false);
+  }, []);
+  // Quiet and full screen would hide the chat, and quiet the failed part too: neither stays with a failed panel.
+  useEffect(() => {
+    if (failed && held) endQuiet(registry);
+  }, [failed, held, registry]);
+
   // A mod's panel took the slot: what the core had there goes.
   const panelMod = panel?.mod;
   useEffect(() => {
+    // Another panel, or none, mounts afresh.
+    setFailedMod((mod) => (mod === panelMod ? mod : undefined));
     if (panelMod === undefined) return;
     setReader(null);
     setReaderFull(false);
@@ -193,5 +209,5 @@ export function useReaderSlot(options: Options) {
     if (isQuiet() && readerPath) client.focus.set({ on: true, path: readerPath });
   }, [client, readerPath]);
 
-  return { reader, readerFull, setReaderFull, panel, filled, quiet, hold, canOpen, open, close, setFocusMode };
+  return { reader, readerFull, setReaderFull, panel, panelFailed, filled, quiet, hold, canOpen, open, close, setFocusMode };
 }

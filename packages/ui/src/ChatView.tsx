@@ -1957,6 +1957,7 @@ export function ChatView({
               openFile={side.open}
               onMissing={recheckDocs}
               quiet={side.quiet}
+              onError={side.panelFailed}
             />
           )}
           {contextOpen && tasks.current && !slim && ContextBlock && (

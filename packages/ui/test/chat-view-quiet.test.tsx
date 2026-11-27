@@ -181,6 +181,50 @@ describe("ctx.panel (the reader's slot)", () => {
     expect(set).toHaveBeenCalledWith("viewer", false);
   });
 
+  /** The chat shows beside the failed part, whose Turn off stays. */
+  const expectFailedNotQuiet = (registry: BlockRegistry) => {
+    expect(body().classList.contains("hh-focus")).toBe(false);
+    expect(body().classList.contains("hh-reader-full")).toBe(false);
+    expect(within(screen.getByRole("alert")).getByRole("button", { name: "Turn off" })).toBeTruthy();
+    expect(registry.slot("quiet")).toHaveLength(0);
+  };
+
+  it("a panel that throws while quiet ends quiet and full screen, and says what was held back", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const registry = createBlockRegistry();
+    let broken = false;
+    const Breaks = (p: PanelProps) => (broken ? <Boom /> : <Panel {...p} />);
+    const mod = await load(registry, Breaks);
+    const client = await chat(registry);
+    act(() => client.openDocument("a.md"));
+    act(() => seen!.onFull(true));
+    mod.quiet(true);
+    act(() => client.emitTasks({ current: { id: "t1", status: "waiting" }, actions: {}, notes: [] }));
+    broken = true;
+    act(() => client.openDocument("b.md"));
+    expectFailedNotQuiet(registry);
+    expect(await screen.findAllByText("While you were reading: the task is waiting for you.")).not.toHaveLength(0);
+    // And it stays out while the panel is failed.
+    mod.quiet(true);
+    expectFailedNotQuiet(registry);
+  });
+
+  it("a failed panel can't make the task view quiet; the next healthy one can", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const registry = createBlockRegistry();
+    const bad = await load(registry, Boom, "bad");
+    const good = await load(registry, Panel, "good");
+    const client = await chat(registry);
+    act(() => bad.panel().open({ path: "a" }));
+    bad.quiet(true);
+    expectFailedNotQuiet(registry);
+    act(() => client.emitTasks({ current: { id: "t1", status: "waiting" }, actions: {}, notes: [] }));
+    expect(screen.queryByText(/^While you were reading/)).toBeNull();
+    act(() => good.panel().open({ path: "b" }));
+    good.quiet(true);
+    expect(body().classList.contains("hh-focus")).toBe(true);
+  });
+
   it("goes away with its mod", async () => {
     const registry = createBlockRegistry();
     const mod = await load(registry);

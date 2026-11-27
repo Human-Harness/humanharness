@@ -45,7 +45,7 @@ The structural rules are manifest schema errors: `defineHarness` and `loadHarnes
 
 ## Profiles
 
-In a harness with profiles (`docs/architecture/profiles.md`) the settings are per profile: they are a collection, so they live in the active profile's folder, and a new profile starts with the defaults. Settings › Modelos (`config.json` → `models`), the language and the appearance stay app-wide. Settings › General has a People section (the active profile's Edit; Archive or Bring back, and Delete… for the others), and Settings › Usage adds up every profile and adds "Usage by person".
+In a harness with profiles (`docs/architecture/profiles.md`) the settings are per profile: they are a collection, so they live in the active profile's folder, and a new profile starts with the defaults. Settings › Modelos (`config.json` → `models`), the language and the appearance stay app-wide. Settings › General has a People section (the active profile's Edit; Archive or Bring back, and Delete… for the others), and Settings › Usage adds up every profile and adds "Usage by person". Settings › Usage is the `usage` core mod's tab (`packages/mods/usage`, UI only, on by default): it registers through `ctx.settingsTab` and keeps its place after Jobs; the usage log and its summary stay in the core.
 
 ## Pinned files budget
 

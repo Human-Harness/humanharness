@@ -20,6 +20,7 @@ const workspacePackages = [
   "@humanharness/mod-history-view",
   "@humanharness/mod-home",
   "@humanharness/mod-sidekick",
+  "@humanharness/mod-usage",
   "@humanharness/mod-sdk",
   "@humanharness/policies",
   "@humanharness/protocol",

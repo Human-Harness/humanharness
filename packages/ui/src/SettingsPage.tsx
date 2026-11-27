@@ -26,7 +26,6 @@ import { SetupStepsList } from "./SetupStepsList";
 import { SlotBoundary } from "./layout/BlockBoundary";
 import { type SettingsAppProps, type Slots, useBlocks } from "./layout/registry";
 import { type SettingsTab, modTabs, tabLabel, visibleTabs } from "./settings-tabs";
-import { UsageTab } from "./UsageTab";
 
 export { type SettingsTab, tabLabel, visibleTabs } from "./settings-tabs";
 
@@ -243,7 +242,6 @@ export function SettingsPage({
             {tab === "plugins" && configured && <PluginsTab client={client} onSub={setSub} />}
             {tab === "connections" && configured && state.connections && <ConnectionsTab client={client} />}
             {tab === "jobs" && configured && state.jobs && <JobsTab client={client} state={state} onChange={onChange} {...(onStartAction ? { onStartAction } : {})} />}
-            {tab === "usage" && configured && <UsageTab client={client} state={state} />}
             {modTab && configured && (
               <SlotBoundary key={modTab.name} mod={modTab.mod} client={client}>
                 <modTab.Component openTab={(id) => onTab(id)} client={client} state={state} />

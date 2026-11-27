@@ -7,6 +7,7 @@ import { HarnessApp } from "../../../ui/src";
 import type { SearchHitView } from "../../../ui/src/client";
 import { commandRows, settingRows } from "../../../ui/src/search/local";
 import { FakeClient } from "../../../ui/test/fake-client";
+import { usageRegistry } from "../../../ui/test/usage-mod";
 
 afterEach(cleanup);
 
@@ -123,7 +124,7 @@ describe("the order of the window's rows", () => {
   it("Settings: a label match before a section or keyword match, the table's order between equals; no match is left out", async () => {
     const client = new FakeClient(ready2);
     const i18n = await createI18n("en");
-    const ids = (q: string) => settingRows(i18n.t, client.state, q).map((r) => r.id);
+    const ids = (q: string) => settingRows(i18n.t, client.state, q, usageRegistry()).map((r) => r.id);
     // "us" starts "uses" in "How much each topic uses" (label) but only the section "Usage" of "Your plan now".
     expect(ids("us")).toEqual(["setting:usage.actions", "setting:usage.plan"]);
     // "usage" is in neither label: both by section, in the table's order.

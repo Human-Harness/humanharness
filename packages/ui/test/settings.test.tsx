@@ -8,6 +8,7 @@ import { type SettingsTab, SettingsPage } from "../src/SettingsPage";
 import { ownName, systemLanguage } from "../src/language";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
+import { withUsage } from "./usage-mod";
 
 afterEach(cleanup);
 
@@ -26,7 +27,7 @@ function Sheet({
 }) {
   const [state, setState] = useState<AppState>(client.state);
   const [tab, setTab] = useState<SettingsTab>(initialTab);
-  return <SettingsPage client={client} state={state} tab={tab} onTab={setTab} onChange={setState} onClose={onClose} onSetup={onSetup} language={language} />;
+  return withUsage(<SettingsPage client={client} state={state} tab={tab} onTab={setTab} onChange={setState} onClose={onClose} onSetup={onSetup} language={language} />);
 }
 
 const ready = { language: "en" as const, folder: "/Users/me/Documents/Demo", engineId: "claude" };

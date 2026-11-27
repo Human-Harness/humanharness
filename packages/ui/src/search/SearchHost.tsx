@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type AppState, type ChatSearchContext, type HarnessClient, type ScopeView, type SearchHitView, isConfigured } from "../client";
+import { useBlocks } from "../layout/registry";
 import type { SearchIntent } from "./intent";
 import { commandRows, settingRows } from "./local";
 import { SearchPalette, isMod } from "./SearchPalette";
@@ -24,6 +25,8 @@ export function SearchHost({
   chatContext?: () => ChatSearchContext | null;
 }) {
   const { t } = useTranslation();
+  // The window's registry: mods' Settings tabs (Usage) are in it, so their rows are offered.
+  const blocks = useBlocks();
   const [open, setOpen] = useState<{ query: string; n: number } | null>(null);
   const isOpen = useRef(false);
   isOpen.current = open !== null;
@@ -109,7 +112,7 @@ export function SearchHost({
       {...(state.scopes ? { scopesPlural: state.scopes.plural } : {})}
       references={(state.references?.length ?? 0) > 0}
       harnessName={state.harness.name}
-      local={(query) => ({ query, setting: settingRows(t, state, query), command: configured ? commandRows(t, state, query, chatContext?.() ?? null, scopes, openScope) : [] })}
+      local={(query) => ({ query, setting: settingRows(t, state, query, blocks), command: configured ? commandRows(t, state, query, chatContext?.() ?? null, scopes, openScope, blocks) : [] })}
       onClose={close}
       onPick={pick}
       onAsk={(text) => {

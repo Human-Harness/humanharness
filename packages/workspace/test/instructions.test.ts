@@ -280,7 +280,7 @@ describe("writing for the reader (document-reader spec §4)", () => {
   });
 
   it("the base guide: last part of the section, English, the six callouts and nothing else", () => {
-    const s = managedSection({ language: "es", blocks: {}, writing: { kinds: {} } });
+    const s = managedSection({ language: "es", blocks: {}, sections: [writingLines({ kinds: {} })] });
     expect(s.trimEnd().endsWith(MANAGED_END)).toBe(true);
     const guide = s.slice(s.indexOf(GUIDE_START), s.indexOf(MANAGED_END));
     expect(guide).toMatchSnapshot();
@@ -295,12 +295,14 @@ describe("writing for the reader (document-reader spec §4)", () => {
     const s = managedSection({
       language: "en",
       blocks: {},
-      writing: {
-        kinds: {
-          adr: { when: "A decision with real alternatives.", sections: ["Status", "Context", "Decision"], status: ["proposed", "accepted", "superseded"] },
-          analysis: { when: "Exploring options before deciding.", sections: ["Context", "Options"] },
-        },
-      },
+      sections: [
+        writingLines({
+          kinds: {
+            adr: { when: "A decision with real alternatives.", sections: ["Status", "Context", "Decision"], status: ["proposed", "accepted", "superseded"] },
+            analysis: { when: "Exploring options before deciding.", sections: ["Context", "Options"] },
+          },
+        }),
+      ],
     });
     const kinds = s.slice(s.indexOf("### Document kinds"), s.indexOf(MANAGED_END));
     expect(kinds).toMatchSnapshot();
@@ -311,7 +313,7 @@ describe("writing for the reader (document-reader spec §4)", () => {
   });
 
   it("a kind's template is a code block inside its list item, so its headings never render as live headings", () => {
-    const s = managedSection({ language: "en", blocks: {}, writing: { kinds: { adr: { when: "x", sections: ["Status"] } } } });
+    const s = managedSection({ language: "en", blocks: {}, sections: [writingLines({ kinds: { adr: { when: "x", sections: ["Status"] } } })] });
     const kinds = s.slice(s.indexOf("### Document kinds"), s.indexOf(MANAGED_END));
     // The item's content starts at column 2; a code block inside it needs 4 more spaces.
     for (const line of ["---", "title: …", "kind: adr", "## Status"]) expect(kinds).toContain(`\n      ${line}\n`);
@@ -414,7 +416,7 @@ describe("Subagents part (subagent policy D3)", () => {
   });
 
   it("allowed: the exact contract, at most five lines, inside the managed markers", () => {
-    const s = managedSection({ language: "en", blocks, subagents: true, material: true, writing: { kinds: {} } });
+    const s = managedSection({ language: "en", blocks, subagents: true, material: true, sections: [writingLines({ kinds: {} })] });
     expect(s).toContain(PART.join("\n"));
     expect(subagentLines(true).slice(1)).toEqual(PART);
     // The intro, then at most five contract lines.

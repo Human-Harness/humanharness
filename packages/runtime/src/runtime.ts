@@ -1,4 +1,4 @@
-import type { Launcher } from "@humanharness/blocks";
+import type { AgentToolSet, Launcher } from "@humanharness/blocks";
 import type { Effort, EngineDef, ModelChoice } from "@humanharness/engines";
 import type { Registry } from "@humanharness/engines/registry";
 import type { Language, LoadedHarness } from "@humanharness/harness-sdk";
@@ -29,10 +29,15 @@ export interface RuntimeOptions {
    */
   material?: { request: (request: unknown) => Promise<unknown>; entry?: string };
   /**
-   * Answers the agent's review tools (review spec §4) in the person's folder. Used only when the harness's agent may edit
-   * the folder; absent, or `permissions.edit: "none"`: no tools and no review lines in AGENTS.md (D0).
+   * The caller's parts of AGENTS.md, after the core's own (each is its lines, led by a blank one), asked when the runtime
+   * starts and on every `refreshInstructions`. Absent: none (D0).
    */
-  review?: (request: unknown) => Promise<unknown>;
+  instructions?: () => string[][];
+  /**
+   * The caller's tools on the `ui` server of task and job slots (a job never gets the `tasksOnly` ones), all answered by
+   * its one handler over one channel. Absent, or no definitions: no tools and no channel (D0).
+   */
+  agentTools?: AgentToolSet;
   /**
    * The core `tools` MCP server (tools spec §5) for task and job slots: `catalogue` lists the agent's tools, `request`
    * runs a call for the asking slot (`createRuntime`'s is `"main"`). The app passes it only when the harness has an
@@ -110,7 +115,7 @@ export interface HarnessRuntime {
   close(): Promise<void>;
 }
 
-export { REVIEW_FAILED, reviewHandler } from "./workspace";
+export { REVIEW_FAILED, reviewAgent, reviewHandler } from "./review-agent";
 
 /** A workspace with exactly one slot, `"main"` (parallel spec §4): the CLI's `humanharness run` and the shell's runtime. */
 export async function createRuntime(opts: RuntimeOptions): Promise<HarnessRuntime> {

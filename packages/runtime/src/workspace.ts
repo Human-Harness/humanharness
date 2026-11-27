@@ -3,12 +3,12 @@ import { promises as fs, realpath as realpathCb } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
-import { type Bridge, type Launcher, type McpServerSpec, type Rpc, dataServerSpec, devLauncher, hasAgentData, openBridge, openRpc, toolsServerSpec, uiServerSpec } from "@humanharness/blocks";
+import { type AgentToolCall, type AgentToolSet, type Bridge, type Launcher, type McpServerSpec, type Rpc, dataServerSpec, devLauncher, hasAgentData, openBridge, openRpc, toolsServerSpec, uiServerSpec } from "@humanharness/blocks";
 import type { CommonOptions, ModelProfile, Session, Transport, TurnScope } from "@humanharness/engines";
 import { registry as appRegistry } from "@humanharness/engines/registry";
 import { type LoadedHarness, type Permissions, type PermissionsOverride, aiStepOf, allBlocks, hasEnginePresets, hasJobs, hasMaterial, hasRecipes, hasTools, narrowPermissions, resolveInHarness } from "@humanharness/harness-sdk";
 import { materialServerSpec } from "@humanharness/material/light";
-import { History, type HistoryTrailer, ReviewRefused, START, appHistoryKeep, prepareFolder, refreshInstructions, writeInstructions } from "@humanharness/workspace";
+import { History, type HistoryTrailer, START, appHistoryKeep, prepareFolder, refreshInstructions, writeInstructions } from "@humanharness/workspace";
 import { turnDocuments } from "./documents";
 import { type Event, fail } from "./events";
 import type { RunningTurn, RuntimeOptions } from "./runtime";
@@ -117,22 +117,12 @@ export interface HarnessWorkspace {
   close(): Promise<void>;
 }
 
-/** What the agent reads when a review request fails for a reason other than the app's own refusal. */
-export const REVIEW_FAILED = "The app could not do that. Nothing was saved; do not retry in a loop.";
-
-/**
- * The review channel's handler: the rpc sends any thrown message to the agent, so only a `ReviewRefused` keeps its
- * text (written for the agent); any other error (a file system error naming paths) becomes `REVIEW_FAILED`.
- */
-export function reviewHandler(handle: (request: unknown) => Promise<unknown>): (request: unknown) => Promise<unknown> {
+/** The tools channel's handler: only a tool offered to the asking slot reaches the caller, whatever the request says. */
+function offeredHandler(set: AgentToolSet, offered: ReadonlySet<string>): (request: unknown) => Promise<unknown> {
   return async (request) => {
-    try {
-      return await handle(request);
-    } catch (err) {
-      if (err instanceof ReviewRefused) throw new Error(err.message);
-      console.error("A review request failed", err);
-      throw new Error(REVIEW_FAILED);
-    }
+    const { tool, args } = (request ?? {}) as Partial<AgentToolCall>;
+    if (typeof tool !== "string" || !offered.has(tool)) throw new Error("Unknown tool");
+    return set.handle(tool, args ?? {});
   };
 }
 
@@ -189,11 +179,8 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
   const material = opts.material && hasMaterial(harness) ? opts.material : undefined;
   const withMaterial = material ? { material: true } : {};
   const tools = opts.tools && hasTools(harness) ? opts.tools : undefined;
-  const review = opts.review && harness.permissions.edit === "folder" ? reviewHandler(opts.review) : undefined;
-  // Every harness gets the writing guide; its kinds only when it declares them (document-reader spec D4); the review
-  // lines only with the review tools (review spec §4).
-  const guide = { kinds: harness.documents?.kinds ?? {}, ...(review ? { review: true } : {}) };
-  const generated = await writeInstructions({ folder, base, language: opts.language, blocks, references, engine, writing: guide, ...(settings ? { settings } : {}), ...(linked.length ? { linked } : {}), ...subagents, ...withMaterial });
+  const sectionsNow = () => (opts.instructions ? { sections: opts.instructions() } : {});
+  const generated = await writeInstructions({ folder, base, language: opts.language, blocks, references, engine, ...sectionsNow(), ...(settings ? { settings } : {}), ...(linked.length ? { linked } : {}), ...subagents, ...withMaterial });
 
   // The history skips the app's files under .harness/ (except the notes, the data and, with material, its registry
   // and decisions) and the generated instructions.
@@ -271,7 +258,9 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
     const bridge: Bridge = await openBridge((m) => emitCurrent?.({ type: "block", name: m.name, data: m.data }));
     let rpc: Rpc | null = null;
     let materialRpc: Rpc | null = null;
-    let reviewRpc: Rpc | null = null;
+    let agentRpc: Rpc | null = null;
+    // The caller's tools this slot gets: a task's, all of them; a job's, those that are not `tasksOnly`; a step's, none.
+    const offered = step ? [] : (opts.agentTools?.definitions.filter((d) => !(o.kind === "job" && d.tasksOnly)) ?? []);
     let toolsRpc: Rpc | null = null;
     try {
       const data = opts.data;
@@ -279,11 +268,10 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
       if (!step && material) materialRpc = await openRpc((r) => material.request(r, ref));
       // Task and job slots alike (Decision 9): a job's agent may call the tools too.
       if (!step && tools) toolsRpc = await openRpc((r) => tools.request(r, ref));
-      // The review tools ask the person (review spec §4): a task's slot only, never a job's (it can't ask, J1).
-      if (!step && review && o.kind !== "job") reviewRpc = await openRpc(review);
+      if (opts.agentTools && offered.length > 0) agentRpc = await openRpc(offeredHandler(opts.agentTools, new Set(offered.map((d) => d.name))));
     } catch (err) {
       await toolsRpc?.close().catch(() => {});
-      await reviewRpc?.close().catch(() => {});
+      await agentRpc?.close().catch(() => {});
       await materialRpc?.close().catch(() => {});
       await rpc?.close().catch(() => {});
       await bridge.close().catch(() => {});
@@ -292,7 +280,7 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
     // Checked again after the awaits: a second openSlot for the same key may have won meanwhile.
     if (closing || slots.has(o.key)) {
       await toolsRpc?.close().catch(() => {});
-      await reviewRpc?.close().catch(() => {});
+      await agentRpc?.close().catch(() => {});
       await materialRpc?.close().catch(() => {});
       await rpc?.close().catch(() => {});
       await bridge.close().catch(() => {});
@@ -325,7 +313,7 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
       : harness.permissions;
     // A task or job slot clears HH_STEP so an outer one can't make it a step slot; only with a recipe declared (D0).
     const noStep: Record<string, string> = hasRecipes(harness) ? { HH_STEP: "" } : {};
-    const ui = uiServerSpec({ harnessConfig: harness.configPath, bridge, launcher, entry: opts.uiServerEntry, ...(reviewRpc ? { review: reviewRpc } : {}) });
+    const ui = uiServerSpec({ harnessConfig: harness.configPath, bridge, launcher, entry: opts.uiServerEntry, ...(agentRpc ? { tools: { definitions: offered, rpc: agentRpc } } : {}) });
     const transportOptions: CommonOptions = {
       folder: stepFolder ?? folder,
       session,
@@ -395,7 +383,7 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
               await materialRpc?.close();
             } finally {
               try {
-                await reviewRpc?.close();
+                await agentRpc?.close();
               } finally {
                 await toolsRpc?.close();
               }
@@ -591,7 +579,7 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
         if (ledger.anyRunning()) return false;
         const nowSubagents = await subagentsNow();
         if (ledger.anyRunning()) return false;
-        const write = refreshInstructions({ folder, base, language: opts.language, blocks, references, writing: guide, ...(now ? { settings: now } : {}), ...(nowLinked.length ? { linked: nowLinked } : {}), ...nowSubagents, ...withMaterial });
+        const write = refreshInstructions({ folder, base, language: opts.language, blocks, references, ...sectionsNow(), ...(now ? { settings: now } : {}), ...(nowLinked.length ? { linked: nowLinked } : {}), ...nowSubagents, ...withMaterial });
         writing = write;
         try {
           return await write;

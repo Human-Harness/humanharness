@@ -37,7 +37,7 @@ import {
   settingsValues,
 } from "@humanharness/harness-sdk";
 import { DefaultModelPolicy } from "@humanharness/policies";
-import { type ErrorCode, createRuntime } from "@humanharness/runtime";
+import { type ErrorCode, createRuntime, reviewAgent } from "@humanharness/runtime";
 import {
   ChatLog,
   type CommandDeps,
@@ -363,9 +363,9 @@ export async function runTask(o: RunOptions): Promise<RunReport> {
       references: references.map((r) => ({ label: r.label, path: r.path })),
       onSession: (s) => void tasks.sessionStarted(s).catch(() => undefined),
       data: (request) => agentDataRequest({ store: async () => dataStore, runningTask: () => tasks.runningTask() }, request),
-      // The agent's review tools (review spec §4), as the app's ReviewService.agent runs them: one set of locks for the
-      // run, keyed on the canonical path by `runReviewRequest`. Only when the agent may edit the folder (D0).
-      ...(canReview ? { review: (request: unknown) => runReviewRequest({ base: folder, locks: reviewLocks, task: openTask }, request) } : {}),
+      // The writing guide, and the review tools (review spec §4) as the app's ReviewService.agent runs them: one set of
+      // locks for the run, keyed on the canonical path by `runReviewRequest`. Tools only when the agent may edit (D0).
+      ...reviewAgent(harness, (request) => runReviewRequest({ base: folder, locks: reviewLocks, task: openTask }, request)),
       // The harness's settings, as the app writes them (harness-settings spec §5). Absent without settings (D0).
       ...(harness.settings ? { instructionSettings: () => instructionSettings(harness.settings!) } : {}),
       // The core `tools` server, as the app passes it: only with tools on and a tool the agent may call (D0).

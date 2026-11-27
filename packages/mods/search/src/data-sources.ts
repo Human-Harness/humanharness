@@ -1,10 +1,9 @@
 // Global search's harness collections (search spec D4): which ones, in which folders, and their records as rows.
 import type { Collection } from "@humanharness/harness-sdk";
-import type { PluginsView } from "@humanharness/protocol";
 import { type DataRow, type DataSource, type RecordSearch, recordRows } from "@humanharness/search";
 import { APP_SCOPE, type DataStore, MAIN_SCOPE, dataFile, dataMetaFile } from "@humanharness/workspace";
 import type { SearchDataDeps } from "./service";
-import { sourceStamp } from "./stamp";
+import { sourceStamp } from "@humanharness/search";
 
 export interface HarnessSourcesDeps {
   base: string;
@@ -99,13 +98,4 @@ export function searchData(w: SearchDataWiring): SearchDataDeps {
 /** A write to `name` matters to search only when that collection opted in with `search`. */
 export function searchableCollection(collections: Record<string, Collection>, name: string): boolean {
   return Object.hasOwn(collections, name) && collections[name].search !== undefined;
-}
-
-/** The plugins that run, with their versions: a view that changes only a sync time or an error gives the same text. */
-export function runningPlugins(view: PluginsView): string {
-  return view.plugins
-    .filter((p) => p.status === "on")
-    .map((p) => `${p.id}@${p.version}`)
-    .sort()
-    .join("\n");
 }

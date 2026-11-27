@@ -6,7 +6,7 @@ import type { ModHost } from "./host";
  * context panel's seven in context-cleanup: none now. Search's two come here under their existing names (search-main)
  * and leave again for mod ipc (search-cleanup).
  */
-export const MOD_APP_CHANNELS = [] as const satisfies readonly InvokeChannel[];
+export const MOD_APP_CHANNELS = ["hh:search", "hh:searchOpen"] as const satisfies readonly InvokeChannel[];
 
 /** What a call answers while the mod that handles it is off: a refusal the window already knows ("not-ready"). */
 const OFF = { ok: false, reason: "not-ready" } as const;

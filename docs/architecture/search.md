@@ -13,10 +13,10 @@ unless the person sends a ⌘Enter question, and that text holds titles and path
   the content check (`secrets.ts`), the `minisearch` options (`options.ts`), the query and its ranking (`query.ts`),
   snippet windows with marks (`snippet.ts`), the heading slug above a match (`anchor.ts`, the reader's own slugger) and
   `LiveIndex` (`live-index.ts`), which implements the spec's `SearchIndex` seam (D6).
-- `packages/shell/src/main/search/`: the folder walk (`walk.ts`), safe reads (`read.ts`), the build (`build.ts`), run in
-  a `worker_threads` worker (`worker.ts`, `runner.ts`, built as `out/main/search-worker.js` beside `diff-worker.js`), the
+- `packages/mods/search/src/` (the core mod `search`, main side): the folder walk (`walk.ts`), safe reads (`read.ts`), the build (`build.ts`), run in
+  a `worker_threads` worker (`worker.ts`, `runner.ts`, built as `worker.js` beside the mod's `main.js`), the
   snapshot (`store.ts`), the service (`service.ts`), hits to the window's view model (`views.ts`) and the handlers
-  (`ipc.ts`). `main/index.ts` creates the service with its dependencies: the base, scopes, references, the engine's
+  (`ipc.ts`). The mod (`main.ts`) creates the service from `ctx.app.search`, with its dependencies: the base, scopes, references, the engine's
   instructions file, the tasks built in memory, and "Show in Finder".
 - `packages/protocol`: the view types (`SearchHitView`, `SearchTarget`, `SearchStatus`, `SearchAnswer`…),
   `SearchClient` as `HarnessClient.search`, and three channels: `hh:search(query, filters)` and `hh:searchOpen(hit)`
@@ -131,12 +131,12 @@ Reading (`read.ts`, `build.ts`):
   hit is indexed by name only (`skipped:secret-shaped`); notes and chats keep their text without those lines, and a
   private-key block is left out whole, BEGIN through END. A hit is never logged, nor where it was.
 - The `SecretStore` and the engines' account folders are outside the folder and never walked; the security test
-  (`packages/shell/test/search-security.test.ts`) proves a known key value never shows up in a snapshot, an answer or a
+  (`packages/mods/search/test/search-security.test.ts`) proves a known key value never shows up in a snapshot, an answer or a
   log.
 
 ## Budgets
 
-`HH_SEARCH_BUDGET=1 corepack pnpm vitest run packages/shell/test/search-budget.test.ts` measures §4.4 on 10,000
+`HH_SEARCH_BUDGET=1 corepack pnpm vitest run packages/mods/search/test/search-budget.test.ts` measures §4.4 on 10,000
 generated files (or `HH_SEARCH_BUDGET_DIR=<folder>`): the time to names and to ready, the query p95 (snippets
 included), the snapshot on disk against the indexed text, and main's heap. It is skipped otherwise: timing asserts
 would be flaky under the suite's load (plan deviation 19).
@@ -182,7 +182,7 @@ See the plan's "Deviations from the spec" (`docs/superpowers/plans/2026-10-30-gl
   object, so an unknown setting is refused). Harness: zod field names (`collectionSchema`); plugin: JSON schema property
   names and an optional `panel`, which must be a declared panel (`pluginManifestSchema`; `pluginCollections` drops
   `panel` before the data model's check). Main lists the sources (`searchData` in
-  `packages/shell/src/main/search/data-sources.ts`): `harness:<folder>/<collection>` (an app-wide collection in `_app`,
+  `packages/mods/search/src/data-sources.ts`): `harness:<folder>/<collection>` (an app-wide collection in `_app`,
   a scoped one in each scope that isn't archived, `main` without scopes) and `plugin:<plugin>/<collection>` for each
   running plugin (`PluginsController.searchSources`). Each source's stamp (`sourceStamp`, `stamp.ts`) is the size and
   mtime of its records file and of its meta file (a store writes the records, then when each changed) plus a hash of

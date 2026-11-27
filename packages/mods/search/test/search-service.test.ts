@@ -4,9 +4,9 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SearchAnswer, SearchStatus } from "@humanharness/protocol";
 import { type SearchDoc, actionDocs } from "@humanharness/search";
-import { inProcessBuild } from "../src/main/search/runner";
-import { SearchService, type SearchServiceDeps } from "../src/main/search/service";
-import { IndexStore, searchDir } from "../src/main/search/store";
+import { inProcessBuild } from "../src/runner";
+import { SearchService, type SearchServiceDeps } from "../src/service";
+import { IndexStore, searchDir } from "../src/store";
 
 let tmp: string;
 let base: string;

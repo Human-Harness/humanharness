@@ -45,7 +45,7 @@ import type {
   PluginTestResult,
   PreparedTaskView,
 } from "@humanharness/protocol";
-import { type DataRow, type DataSource, recordRows } from "@humanharness/search";
+import { type DataRow, type DataSource, recordRows, sourceStamp } from "@humanharness/search";
 import {
   APP_SCOPE,
   type AttentionInput,
@@ -62,7 +62,6 @@ import {
 import { BROKER_LIMITS, type BrokerDataOp, PluginBroker, type PluginAttentionInput } from "./plugin-broker";
 import { PluginChannel } from "./plugin-channel";
 import { PluginData } from "./plugin-data";
-import { sourceStamp } from "./search/stamp";
 import type { runFile } from "./plugin-exec";
 import { type PluginEntry, type PluginPointers, distFolderOf, loadPlugins, readDist } from "./plugin-load";
 import { CrashPolicy, PluginScheduler } from "./plugin-scheduler";

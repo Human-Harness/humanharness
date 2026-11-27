@@ -2,7 +2,7 @@ import { type Dirent, promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { CHATS_DIR, DEFAULT_IGNORED_DIRS, GitIgnore, deniedPath } from "@humanharness/search";
-import { homeOrDotFolder } from "../references";
+import { homeOrDotFolder } from "@humanharness/workspace";
 
 /** A file found by the walk. `link`: a symbolic link, indexed by its own name only and never followed (§8.1). */
 export interface WalkEntry {

@@ -3,8 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { SearchDoc } from "@humanharness/search";
-import { type BuildJob, type BuildMessage, build } from "../src/main/search/build";
-import { workerBuild } from "../src/main/search/runner";
+import { type BuildJob, type BuildMessage, build } from "../src/build";
+import { workerBuild } from "../src/runner";
 
 let root: string;
 const put = (rel: string, text: string | Buffer = "x") => {

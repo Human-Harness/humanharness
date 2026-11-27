@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { searchHandlers } from "../src/main/search/ipc";
-import type { SearchService } from "../src/main/search/service";
+import { searchHandlers } from "../src/ipc";
+import type { SearchService } from "../src/service";
 
 const svc = (o: Partial<SearchService> = {}) => ({ query: vi.fn(async () => ({ ok: true })), opened: vi.fn(async () => ({ ok: true })), ...o }) as unknown as SearchService;
 

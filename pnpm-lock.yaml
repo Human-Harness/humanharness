@@ -559,6 +559,27 @@ importers:
         specifier: ^19.3.0
         version: 19.3.0(react@19.3.0)
 
+  packages/mods/search:
+    dependencies:
+      '@humanharness/blocks':
+        specifier: workspace:*
+        version: link:../../blocks
+      '@humanharness/harness-sdk':
+        specifier: workspace:*
+        version: link:../../harness-sdk
+      '@humanharness/mod-sdk':
+        specifier: workspace:*
+        version: link:../../mod-sdk
+      '@humanharness/protocol':
+        specifier: workspace:*
+        version: link:../../protocol
+      '@humanharness/search':
+        specifier: workspace:*
+        version: link:../../search
+      '@humanharness/workspace':
+        specifier: workspace:*
+        version: link:../../workspace
+
   packages/mods/sidekick:
     dependencies:
       '@humanharness/engines':
@@ -753,6 +774,9 @@ importers:
       '@humanharness/mod-sdk':
         specifier: workspace:*
         version: link:../mod-sdk
+      '@humanharness/mod-search':
+        specifier: workspace:*
+        version: link:../mods/search
       '@humanharness/mod-sidekick':
         specifier: workspace:*
         version: link:../mods/sidekick

@@ -2,8 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { inProcessBuild } from "../src/main/search/runner";
-import { SearchService } from "../src/main/search/service";
+import { inProcessBuild } from "../src/runner";
+import { SearchService } from "../src/service";
 
 const SECRETS = [`sk-${"Z".repeat(45)}`, `ghp_${"Q".repeat(36)}`, "AKIAQWERTYUIOPASDFGH", "-----BEGIN OPENSSH PRIVATE KEY-----", "OUTSIDE_SECRET_MARKER", "dotenv-password-value"];
 

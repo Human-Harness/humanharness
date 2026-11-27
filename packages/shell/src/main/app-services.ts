@@ -3,8 +3,8 @@ import { app, type BrowserWindow, dialog, shell } from "electron";
 import { getEngine } from "@humanharness/engines";
 import { type LoadedHarness, dataCollections } from "@humanharness/harness-sdk";
 import type { ConfiguredApp, ScopesView } from "@humanharness/protocol";
+import type { CoreApp } from "@humanharness/mod-sdk/core";
 import type { PushChannel } from "@humanharness/protocol/channels";
-import { type SearchDoc, actionDocs, openTaskDoc, pastTaskDocs } from "@humanharness/search";
 import { APP_SCOPE, type History, MAIN_SCOPE, loadReview, notesPrefix, readNotes } from "@humanharness/workspace";
 import type { DataStore, ScopeStore } from "@humanharness/workspace";
 import type { ConfigStore } from "./config";
@@ -24,11 +24,8 @@ import type { Profiles } from "./profiles";
 import type { ResolvedReference } from "./references";
 import { RestoreGuard } from "./restore-guard";
 import { ReviewService } from "./reviews";
-import { searchData, searchableCollection } from "./search/data-sources";
 import { createCoreEvents } from "./mods/core-events";
 import type { ModHost } from "./mods/host";
-import { workerBuild } from "./search/runner";
-import { SearchService } from "./search/service";
 import { revealIfStillSafe } from "./open-path";
 import type { SettingsController } from "./settings";
 import type { TaskManager } from "./task-manager";
@@ -216,81 +213,52 @@ export function createAppServices(d: AppServicesDeps) {
     diff: workerDiff({ entry: path.join(d.here, "diff-worker.js") }),
   });
 
-  /** What search finds among the tasks, built when the palette opens (search spec §4.2): actions, the open task, past tasks. */
-  async function searchMemory(): Promise<SearchDoc[]> {
+  /** What search finds among the tasks, read when the palette opens (search spec §4.2): actions, the open task, past tasks. */
+  async function searchTasks(): ReturnType<CoreApp["search"]["tasks"]> {
     const scopeOf = (s: string | undefined) => (scoped() ? (s ?? APP_SCOPE) : MAIN_SCOPE);
     const view = await d.tasks().view();
-    const actions = actionDocs(
-      Object.entries(d.harness().actions).map(([id, a]) => ({
-        id,
-        label: a.label,
-        ...(a.description ? { description: a.description } : {}),
-        ...(a.tier ? { tier: a.tier } : {}),
-        ...(view.actions[id] ? { status: view.actions[id] } : {}),
-        scope: scopeOf(undefined),
-      })),
-    );
+    const actions = Object.entries(d.harness().actions).map(([id, a]) => ({
+      id,
+      label: a.label,
+      ...(a.description ? { description: a.description } : {}),
+      ...(a.tier ? { tier: a.tier } : {}),
+      ...(view.actions[id] ? { status: view.actions[id] } : {}),
+      scope: scopeOf(undefined),
+    }));
     const current = view.current;
     const label = (id: string | null | undefined) => (id && Object.hasOwn(d.harness().actions, id) ? d.harness().actions[id].label : undefined);
-    const open = current && label(current.action) ? [openTaskDoc({ id: current.id, title: label(current.action)!, scope: scopeOf(current.scope), at: 0 })] : [];
+    const open = current && label(current.action) ? { id: current.id, title: label(current.action)!, scope: scopeOf(current.scope) } : null;
     const history = await currentHistory();
     const rows = history ? historyView(await history.tasks()) : [];
-    const past = pastTaskDocs(
-      rows.flatMap((r) => {
-        const title = r.noteTitle ?? label(r.actionId);
-        return r.taskId && r.taskId !== current?.id && title ? [{ id: r.taskId, title, scope: scopeOf(r.scopeId), at: Date.parse(r.date) || 0 }] : [];
-      }),
-    );
-    return [...actions, ...open, ...past];
+    const past = rows.flatMap((r) => {
+      const title = r.noteTitle ?? label(r.actionId);
+      return r.taskId && r.taskId !== current?.id && title ? [{ id: r.taskId, title, scope: scopeOf(r.scopeId), at: Date.parse(r.date) || 0 }] : [];
+    });
+    return { actions, open, past };
   }
 
-  /** Global search's collections (search spec D4): the harness's, then each running plugin's, of the live index's base only. */
-  const searchDataDeps = searchData({
-    current: () => currentBase(),
-    collections: () => dataCollections(d.harness()),
-    scoped,
-    scopes: async (base) => (await scopeStoreFor(base).list()).filter((s) => !s.archived).map((s) => s.id),
-    store: (base) => dataStoreFor(base),
-    plugins: () => d.pluginsCtl() ?? null,
-  });
-
-  /** Global search (search spec): nothing is read, written or started until the window first asks (D0, D8). */
-  const searchSvc = new SearchService({
+  /** What global search's mod reads of the app (`ctx.app.search`): the mod owns the index, the worker and the channels. */
+  const search: CoreApp["search"] = {
     userData: () => app.getPath("userData"),
-    base: async () => {
-      const c = await validConfig();
-      return c ? baseOf(c) : null;
-    },
-    scoped,
     openScope: () => d.tasks().currentScope(),
     scopeTitles: async () => new Map((await scopesView()).list.map((s) => [s.id, s.title])),
     references: async () => {
       const c = await validConfig();
       return c ? (await workReferences(c, baseOf(c))).map((r) => ({ id: r.id, label: r.label, path: r.path })) : [];
     },
-    memory: () => searchMemory(),
+    tasks: () => searchTasks(),
     extraDenied: async () => {
       // Same rule as the history's ignore list: the engine's instructions file is the app's, not the person's.
       const c = await validConfig();
       const extra = c ? getEngine(c.engineId).instructionsFile?.path : undefined;
       return extra ? [extra] : [];
     },
-    status: (s) => sendToWindow("hh:searchStatus", s),
-    runner: workerBuild({ entry: path.join(d.here, "search-worker.js") }),
     reveal: (file, roots) => revealIfStillSafe(file, roots, (p) => shell.showItemInFolder(p)),
-    data: searchDataDeps,
-    // A burst of writes (an import, a plugin run) is one refresh.
-    dataDelayMs: 500,
-  });
-
-  // The search service hears the core's events (a core mod gets the same ones from the host): the call sites emit.
-  // A write matters to search only when its collection opted in (a plugin's data, null, always does).
-  events.on.dataChanged((collection) => {
-    if (collection === null || searchableCollection(dataCollections(d.harness()), collection)) searchSvc.dataChanged();
-  });
-  events.on.restored((paths) => searchSvc.committed(paths && [...paths]));
-  events.on.baseGone((base) => searchSvc.discard(base));
-  events.on.closing(() => searchSvc.flush());
+    collections: () => dataCollections(d.harness()),
+    scopes: async (base) => (await scopeStoreFor(base).list()).filter((s) => !s.archived).map((s) => s.id),
+    store: (base) => dataStoreFor(base),
+    plugins: () => d.pluginsCtl() ?? null,
+  };
 
   /** Tells the window which paths each commit touched: an open timeline gets its new entry (§6.3 `onChange`). */
   const commitAnnouncements = commitAnnouncer((paths) => {
@@ -314,7 +282,7 @@ export function createAppServices(d: AppServicesDeps) {
     harnessUiData,
     reviews,
     fileTimelines,
-    searchSvc,
+    search,
     events,
     commitAnnouncements,
     announceCommits,

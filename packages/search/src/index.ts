@@ -9,3 +9,4 @@ export * from "./anchor";
 export * from "./snippet";
 export * from "./query";
 export * from "./live-index";
+export * from "./stamp";

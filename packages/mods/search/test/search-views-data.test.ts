@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SearchHit } from "@humanharness/search";
-import { searchHandlers } from "../src/main/search/ipc";
-import type { SearchService } from "../src/main/search/service";
-import { hintOf, hitView, targetOf } from "../src/main/search/views";
+import { searchHandlers } from "../src/ipc";
+import type { SearchService } from "../src/service";
+import { hintOf, hitView, targetOf } from "../src/views";
 
 const record = (data: Partial<NonNullable<SearchHit["data"]>> = {}): SearchHit => ({
   id: "data:harness:_app/people#ana-secret-key",

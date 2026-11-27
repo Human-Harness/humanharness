@@ -4,12 +4,15 @@ What a task's first message carries beyond the notes, and what the person can ch
 (whole, up to a token budget, or by title) and the notes they leave out of the notes index. The context meter and the
 chip stay in the core, as do the per-task record and the "Add now" turn.
 
-The context panel is a core mod: it ships with the app and is on by default. In this step it has its main side only; the
-panel itself is still drawn by the core's `ContextPanel`.
+The context panel is a core mod: it ships with the app and is on by default. It has a main side and a `ui` part: the
+panel is the block `context-panel/panel`, which the task view draws in the reader's slot. With the mod off the task
+view has no "Open context" and no panel.
 
 ## For agents
 
-- `mod.json`: id `context-panel`, a `main`, no `ui` yet.
+- `mod.json`: id `context-panel`, a `main` and a `ui`.
+- `src/ui.tsx` registers the `panel` block (`src/ContextPanel.tsx`, the panel itself); `ChatView` gives it `taskId`, `usage`,
+  `notes`, `onOpen`, `onClose` as block props.
 - `src/main.ts` registers the `on.firstMessage` hook (the pinned section, its items and the excluded notes), the seven
   `hh:context*` app channels and the `hh:context` push, all under their existing names. It reads the task's record, the
   "Add now" turn and the record's changes through `ctx.app.tasks`, and the folder, the scopes, the budget, the history

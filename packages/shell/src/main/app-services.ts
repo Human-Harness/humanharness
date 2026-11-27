@@ -25,7 +25,9 @@ import type { Profiles } from "./profiles";
 import type { ResolvedReference } from "./references";
 import { RestoreGuard } from "./restore-guard";
 import { ReviewService } from "./reviews";
-import { searchData } from "./search/data-sources";
+import { searchData, searchableCollection } from "./search/data-sources";
+import { createCoreEvents } from "./mods/core-events";
+import type { ModHost } from "./mods/host";
 import { workerBuild } from "./search/runner";
 import { SearchService } from "./search/service";
 import { revealIfStillSafe } from "./open-path";
@@ -69,7 +71,7 @@ export interface AppServicesDeps {
   /** The mods' own stores (`ctx.stores`): whether a mod has one named `name`, and that store in `base`. Absent: none. */
   modStores?: { has(name: string): boolean; storeFor(base: string, name: string): DataStore | undefined };
   /** The mod host, told after a restore (core mods' `onRefresh`). Absent or null: no mods (D0). */
-  modHost?(): { refresh(): Promise<void> } | null;
+  modHost?(): (Pick<ModHost, "refresh"> & Partial<Pick<ModHost, "dataChanged" | "restored" | "baseGone">>) | null;
   scopeStoreFor(base: string): ScopeStore;
   scopesView(): Promise<ScopesView>;
   currentHistory(): Promise<History | null>;
@@ -114,6 +116,9 @@ export function createAppServices(d: AppServicesDeps) {
     profileChange: () => d.profilesCtl()?.changing() ?? false,
   });
 
+  /** What happened in the base (data written, restored, a base gone, quitting): core mods and the core's services listen. */
+  const events = createCoreEvents({ host: () => d.modHost?.() ?? null });
+
   /**
    * Restores: refused while quitting, while a task operation runs or turns are held (engine change, folder
    * move, a profile switch); one at a time; new turns are refused and a runtime starting waits until it ends.
@@ -123,8 +128,8 @@ export function createAppServices(d: AppServicesDeps) {
   /** A restore changes tracked files with no data event: the settings may have changed. */
   function afterRestore(): void {
     void d.settingsCtl()?.changed();
-    // A restore reconciles the whole folder (search spec §4.2); a no-op until search was first opened (D0).
-    searchSvc.committed(null);
+    // A restore reconciles the whole folder (search spec §4.2): the search index hears it as `restored`.
+    events.restored(null);
     // The core mods read their settings again (Sidekick on or off, its state sent). D0: no host.
     void d.modHost?.()?.refresh().catch((err: unknown) => console.error("The mods' refresh failed", err));
   }
@@ -316,6 +321,15 @@ export function createAppServices(d: AppServicesDeps) {
     dataDelayMs: 500,
   });
 
+  // The search service hears the core's events (a core mod gets the same ones from the host): the call sites emit.
+  // A write matters to search only when its collection opted in (a plugin's data, null, always does).
+  events.on.dataChanged((collection) => {
+    if (collection === null || searchableCollection(dataCollections(d.harness()), collection)) searchSvc.dataChanged();
+  });
+  events.on.restored((paths) => searchSvc.committed(paths && [...paths]));
+  events.on.baseGone((base) => searchSvc.discard(base));
+  events.on.closing(() => searchSvc.flush());
+
   /** The task's panel refreshes (`hh:context`); a task that is no longer open sends nothing. */
   async function sendContext(task: string): Promise<void> {
     const got = await contextSvc.get(task).catch(() => null);
@@ -327,8 +341,8 @@ export function createAppServices(d: AppServicesDeps) {
     sendToWindow("hh:fileCommits", paths);
     // A commit that touched a scope's engine folder: its Engine config section reads it again (enginePresets only).
     d.engineIpc()?.committed(paths);
-    // Search (D0): a no-op until the palette first opened; then the commit's paths are read again.
-    searchSvc.committed(paths);
+    // Search (D0): the commit's paths go out as `restored`; the search service (and a core mod) read them again.
+    events.restored(paths);
   });
   const announceCommits = (history: History) => commitAnnouncements.watch(history);
 
@@ -346,6 +360,7 @@ export function createAppServices(d: AppServicesDeps) {
     fileTimelines,
     contextSvc,
     searchSvc,
+    events,
     sendContext,
     commitAnnouncements,
     announceCommits,

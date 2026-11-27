@@ -15,7 +15,7 @@ export const BEFORE_SEND_MS = 6_000;
 export const HOOK_MS = 5_000;
 export const STRIKES = 3;
 
-type HookName = "beforeSend" | "turnStart" | "turnEnd" | "taskOpen" | "taskClose" | "betweenTasks" | "phaseMoved" | "daily" | "close" | "refresh" | "firstMessage" | "contextChanged";
+type HookName = "beforeSend" | "turnStart" | "turnEnd" | "taskOpen" | "taskClose" | "betweenTasks" | "phaseMoved" | "daily" | "close" | "refresh" | "firstMessage" | "contextChanged" | "dataChanged" | "restored" | "baseGone";
 const HOOKS: readonly HookName[] = ["beforeSend", "turnStart", "turnEnd", "taskOpen", "taskClose", "betweenTasks", "phaseMoved", "daily", "close"];
 /** A local calendar day, YYYY-MM-DD. */
 export const localDay = (d: Date): string => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -215,7 +215,7 @@ export class ModHost {
     return {
       ...(app ? { app } : {}),
       onRefresh: add("refresh") as CoreMainCtx<unknown>["onRefresh"],
-      coreOn: { firstMessage: add("firstMessage") },
+      coreOn: { firstMessage: add("firstMessage"), dataChanged: add("dataChanged"), restored: add("restored"), baseGone: add("baseGone") },
     };
   }
 
@@ -390,6 +390,18 @@ export class ModHost {
   /** The base or its data changed under the core mods with no task opening or closing (a profile switch, an undo). */
   refresh(): Promise<void> {
     return this.each("refresh", undefined);
+  }
+  /** The base's data changed (a collection write, a plugin's data or on/off; `collection` null for a plugin): the core mods that listen hear it. */
+  dataChanged(collection: string | null): Promise<void> {
+    return this.each("dataChanged", { collection });
+  }
+  /** A history restore touched `paths` (null: the whole folder). */
+  restored(paths: readonly string[] | null): Promise<void> {
+    return this.each("restored", paths);
+  }
+  /** `base` is gone (a folder move, a forgotten profile). */
+  baseGone(base: string): Promise<void> {
+    return this.each("baseGone", base);
   }
   /** Task `taskId`'s context record changed: the core mods that listen (`ctx.app.tasks.onContextChanged`) hear it. */
   contextChanged(taskId: string): Promise<void> {

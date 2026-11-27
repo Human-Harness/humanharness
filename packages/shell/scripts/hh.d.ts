@@ -993,6 +993,8 @@ declare module "@humanharness/ui/_internal/src/layout/app" {
       };
   }
   export const AppProvider: import("react").Provider<AppValue | null>;
+  /** The app when there is one: a task view drawn on its own (a setup step, a test) has none. */
+  export const useOptionalApp: () => AppValue | null;
   /** The app, for the layout and its blocks. */
   export function useApp(): AppValue;
 }

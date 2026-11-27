@@ -1,4 +1,4 @@
-import { Group, Row, SecondaryPage, SectionHead } from "./guide";
+import { Group, IconButton, Row, SecondaryPage, SectionHead } from "./guide";
 export * from "./client";
 export * from "./state";
 export * from "./usage";
@@ -38,13 +38,13 @@ export type { ModelsRowProps, OverlayButtonProps, OverlayPanelProps, RowProps, S
 export type { AnswerHold } from "./InputForm";
 export { BackupNotice, type FolderMove } from "./BackupNotice";
 export { AppFooter, HHLogo, SettingsGear, Tag, type TagTone, TopBar } from "./chrome";
-export { Hidden, Icon, IconButton, Rx } from "./guide";
+export { Hidden, Icon, Rx } from "./guide";
 // The History entry labels and day grouping the file timeline also uses; the History panel (a core mod) builds with them.
 export { byDay, entryLabel, sameDay } from "./history-labels";
 // Core-only guide pieces for the core mods (not in hh.d.ts).
 export { Button, ICON_NAMES, type IconName, Segmented } from "./task-view/pieces";
 // The History panel's page shell: imported, then exported, so it stays out of hh.d.ts like Settings' pieces below.
-export { SecondaryPage };
+export { IconButton, SecondaryPage };
 // A core mod's Settings tab builds with Settings' own pieces: imported, then exported, so hh-dts (which publishes only
 // `export … from "./guide…"`) keeps them core-only.
 export { Group, Row, SectionHead };

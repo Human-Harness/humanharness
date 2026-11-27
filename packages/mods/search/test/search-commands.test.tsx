@@ -57,7 +57,7 @@ describe("actions in the palette (search spec §6; plan 1 deviation 9)", () => {
   it("New question focuses an empty composer and sends nothing; an action opened from search reaches neither main nor the recents", async () => {
     const client = new FakeClient(ready);
     const opened: SearchHitView[] = [];
-    client.search.opened = async (hit) => {
+    client.searchApi.opened = async (hit) => {
       opened.push(hit);
       return { ok: true };
     };

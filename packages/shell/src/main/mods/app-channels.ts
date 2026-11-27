@@ -3,10 +3,10 @@ import type { ModHost } from "./host";
 
 /**
  * The app channels a core mod answers (`ctx.handle`). Sidekick's 26 left for the mod's own channels in 1b and the
- * context panel's seven in context-cleanup: none now. Search's two come here under their existing names (search-main)
- * and leave again for mod ipc (search-cleanup).
+ * context panel's seven in context-cleanup, search's two in search-cleanup: none now. The mechanism stays for a core mod
+ * that must answer an app channel again.
  */
-export const MOD_APP_CHANNELS = ["hh:search", "hh:searchOpen"] as const satisfies readonly InvokeChannel[];
+export const MOD_APP_CHANNELS = [] as const satisfies readonly InvokeChannel[];
 
 /** What a call answers while the mod that handles it is off: a refusal the window already knows ("not-ready"). */
 const OFF = { ok: false, reason: "not-ready" } as const;

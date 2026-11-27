@@ -907,8 +907,9 @@ export class FakeClient implements HarnessClient {
   private searchOpeners = new Set<(query?: string) => void>();
   private searchStatusListeners = new Set<(s: SearchStatus) => void>();
   private searchRecords = new Map<string, (key: string | number | null, scope: string) => void>();
-  readonly search: SearchClient = {
-    query: async (query, filters) => {
+  /** The search mod's ipc as its ui sees it (`searchApi`): what main answers in the app. */
+  readonly searchApi = {
+    query: async (query: string, filters?: SearchFilters): Promise<SearchAnswer> => {
       this.searchCalls.push({ query, ...(filters ? { filters } : {}) });
       return (
         this.searchAnswers[query] ?? {
@@ -923,14 +924,16 @@ export class FakeClient implements HarnessClient {
         }
       );
     },
-    opened: async (hit) => {
+    opened: async (hit: SearchHitView) => {
       this.searchOpened.push(hit);
       return { ok: true };
     },
-    onStatus: (l) => {
+    onStatus: (l: (s: SearchStatus) => void) => {
       this.searchStatusListeners.add(l);
       return () => void this.searchStatusListeners.delete(l);
     },
+  };
+  readonly search: SearchClient = {
     open: (query) => {
       for (const l of this.searchOpeners) l(query);
     },

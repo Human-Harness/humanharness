@@ -1,6 +1,7 @@
 import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type HarnessClient, type SearchAnswer, type SearchFilters, type SearchHitView, type SearchIndexKind, type SearchMarked, type SearchRowKind, type SearchStatus, Toggle } from "@humanharness/ui";
+import type { SearchApi } from "./api";
 import { questionText } from "./ask";
 import { type LocalRows, type Section, chipsOf, rowsOf, sectionsOf, step } from "./model";
 
@@ -71,6 +72,8 @@ function HitRow({ id, hit, tag, active, onPick, onHover }: { id: string; hit: Se
 
 export interface SearchPaletteProps {
   client: HarnessClient;
+  /** The mod's calls to its main: the query, the opened hit and the index's progress. */
+  api: SearchApi;
   initialQuery?: string;
   /** The footer's "Searching in <harness>" or "<scope> + app". */
   where: string;
@@ -91,7 +94,7 @@ const INDEX_KINDS: readonly SearchRowKind[] = ["task", "note", "file", "data"];
 const isIndexKind = (k: SearchRowKind): k is SearchIndexKind => INDEX_KINDS.includes(k);
 
 /** The ⌘K palette (search spec §5): a modal dialog with a combobox over a grouped listbox. Asks main; sends nothing. */
-export function SearchPalette({ client, initialQuery = "", where, scopesPlural, references, harnessName, local, onClose, onPick, onAsk }: SearchPaletteProps) {
+export function SearchPalette({ client, api, initialQuery = "", where, scopesPlural, references, harnessName, local, onClose, onPick, onAsk }: SearchPaletteProps) {
   const { t } = useTranslation();
   const [query, setQuery] = useState(initialQuery);
   const [kind, setKind] = useState<SearchRowKind | null>(null);
@@ -111,13 +114,13 @@ export function SearchPalette({ client, initialQuery = "", where, scopesPlural, 
 
   useEffect(
     () =>
-      client.search.onStatus((s) => {
+      api.onStatus((s) => {
         setStatus(s);
         // Names, then contents, then ready (D8): each step asks again; the progress counts in between don't.
         if (s.state !== pushed.current) setMoved((m) => m + 1);
         pushed.current = s.state;
       }),
-    [client],
+    [api],
   );
   useEffect(() => {
     inputRef.current?.focus();
@@ -132,7 +135,7 @@ export function SearchPalette({ client, initialQuery = "", where, scopesPlural, 
     const filters: SearchFilters = { ...(kind && isIndexKind(kind) ? { kind } : {}), ...(allScopes !== null ? { allScopes } : {}), ...(refs ? {} : { references: false }) };
     const timer = setTimeout(
       () => {
-        void client.search.query(query, filters).then((a) => {
+        void api.query(query, filters).then((a) => {
           if (n !== asked.current) return;
           setAnswer(a);
           if (!byIndex) setActive(0);
@@ -142,7 +145,7 @@ export function SearchPalette({ client, initialQuery = "", where, scopesPlural, 
       query.trim() ? QUERY_DELAY_MS : 0,
     );
     return () => clearTimeout(timer);
-  }, [client, query, kind, allScopes, refs, moved]);
+  }, [api, query, kind, allScopes, refs, moved]);
 
   // Built for the query main answered, not the one being typed: the groups, the chips and their counts describe one query.
   // Main not ready or failing: for the typed one (no chips then), so Settings and Actions still work; nothing before

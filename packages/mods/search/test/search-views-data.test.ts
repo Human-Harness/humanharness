@@ -40,11 +40,11 @@ describe("data rows in main's views (search spec D4, plan deviation 10)", () => 
   it("the Data filter passes the handlers; an unknown kind is still dropped", async () => {
     const s = { query: vi.fn(async () => ({ ok: true })), opened: vi.fn(async () => ({ ok: true })) } as unknown as SearchService;
     const h = searchHandlers(s);
-    await h["hh:search"]("ana", { kind: "data" });
+    await h["query"]("ana", { kind: "data" });
     expect(s.query).toHaveBeenLastCalledWith("ana", { kind: "data" });
-    await h["hh:search"]("ana", { kind: "setting" });
+    await h["query"]("ana", { kind: "setting" });
     expect(s.query).toHaveBeenLastCalledWith("ana", {});
-    await h["hh:search"]("ana", { kind: "Data" });
+    await h["query"]("ana", { kind: "Data" });
     expect(s.query).toHaveBeenLastCalledWith("ana", {});
   });
 });

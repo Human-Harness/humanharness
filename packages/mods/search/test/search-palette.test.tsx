@@ -33,7 +33,7 @@ async function show(props: Partial<Parameters<typeof SearchPalette>[0]> = {}) {
   const onPick = vi.fn();
   const onAsk = vi.fn();
   const onClose = vi.fn();
-  await renderIn("en", <SearchPalette client={client} where="Searching in Demo" references onClose={onClose} onPick={onPick} onAsk={onAsk} {...props} />);
+  await renderIn("en", <SearchPalette client={client} api={client.searchApi} where="Searching in Demo" references onClose={onClose} onPick={onPick} onAsk={onAsk} {...props} />);
   const dialog = await screen.findByRole("dialog", { name: "Search" });
   const input = within(dialog).getByRole("combobox", { name: "Search tasks, notes and files" });
   return { client, dialog, input, onPick, onAsk, onClose };

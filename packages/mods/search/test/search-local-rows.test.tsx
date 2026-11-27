@@ -16,9 +16,9 @@ const file = (id: string): SearchHitView => ({ id, kind: "file", title: [{ text:
 
 async function palette(local: (q: string) => LocalRows) {
   const client = new FakeClient({ language: "en", folder: "/w", engineId: "claude" });
-  const query = vi.spyOn(client.search, "query").mockImplementation(async (q) => answer(q));
+  const query = vi.spyOn(client.searchApi, "query").mockImplementation(async (q) => answer(q));
   const onPick = vi.fn();
-  await renderIn("en", <SearchPalette client={client} where="Searching in Demo" references={false} onClose={() => {}} onPick={onPick} onAsk={() => {}} local={local} />);
+  await renderIn("en", <SearchPalette client={client} api={client.searchApi} where="Searching in Demo" references={false} onClose={() => {}} onPick={onPick} onAsk={() => {}} local={local} />);
   return { query, onPick };
 }
 
@@ -58,8 +58,8 @@ describe("settings and actions in the palette (search spec §3, §6)", () => {
 describe("the window's rows without main's answer", () => {
   it("search not ready: Settings and Actions still show, under the message; no chips", async () => {
     const client = new FakeClient({ language: "en", folder: "/w", engineId: "claude" });
-    vi.spyOn(client.search, "query").mockImplementation(async () => ({ ok: false, reason: "not-ready" }));
-    await renderIn("en", <SearchPalette client={client} where="Searching in Demo" references={false} onClose={() => {}} onPick={() => {}} onAsk={() => {}} local={(q) => ({ query: q, setting: q.trim() ? [SETTING] : [], command: [COMMAND] })} />);
+    vi.spyOn(client.searchApi, "query").mockImplementation(async () => ({ ok: false, reason: "not-ready" }));
+    await renderIn("en", <SearchPalette client={client} api={client.searchApi} where="Searching in Demo" references={false} onClose={() => {}} onPick={() => {}} onAsk={() => {}} local={(q) => ({ query: q, setting: q.trim() ? [SETTING] : [], command: [COMMAND] })} />);
     fireEvent.change(screen.getByRole("combobox", { name: "Search tasks, notes and files" }), { target: { value: "app" } });
     const list = await screen.findByRole("listbox", { name: "Results" });
     expect(await within(list).findByRole("group", { name: "Settings" })).toBeTruthy();
@@ -79,9 +79,9 @@ describe("the window's rows without main's answer", () => {
 describe("keys across merged groups", () => {
   it("↓ goes from main's Files into Settings, then Actions; ↑ comes back; Enter opens the active row", async () => {
     const client = new FakeClient({ language: "en", folder: "/w", engineId: "claude" });
-    vi.spyOn(client.search, "query").mockImplementation(async (q) => answer(q, { groups: q.trim() ? [{ kind: "file", total: 1, hits: [file("a.md")] }] : [], counts: { task: 0, note: 0, file: q.trim() ? 1 : 0 } }));
+    vi.spyOn(client.searchApi, "query").mockImplementation(async (q) => answer(q, { groups: q.trim() ? [{ kind: "file", total: 1, hits: [file("a.md")] }] : [], counts: { task: 0, note: 0, file: q.trim() ? 1 : 0 } }));
     const onPick = vi.fn();
-    await renderIn("en", <SearchPalette client={client} where="Searching in Demo" references={false} onClose={() => {}} onPick={onPick} onAsk={() => {}} local={(q) => ({ query: q, setting: q.trim() ? [SETTING] : [], command: q.trim() ? [COMMAND] : [] })} />);
+    await renderIn("en", <SearchPalette client={client} api={client.searchApi} where="Searching in Demo" references={false} onClose={() => {}} onPick={onPick} onAsk={() => {}} local={(q) => ({ query: q, setting: q.trim() ? [SETTING] : [], command: q.trim() ? [COMMAND] : [] })} />);
     const box = screen.getByRole("combobox", { name: "Search tasks, notes and files" });
     fireEvent.change(box, { target: { value: "a" } });
     const list = await screen.findByRole("listbox", { name: "Results" });

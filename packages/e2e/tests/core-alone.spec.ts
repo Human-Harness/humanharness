@@ -6,8 +6,8 @@ import { expect, type Page, test } from "@playwright/test";
 import { appHomeOf, closeAndClean, launch, makeSandbox } from "./helpers";
 import { historyScript } from "./scripts";
 
-// Core alone (minimal-core spec §8): the demo harness declares no mods, the three core mods that are on by default
-// (History view, Home, Sidekick) are switched off, and the person's layout places no mod block. The core still runs a task and snapshots its
+// Core alone (minimal-core spec §8): the demo harness declares no mods, the core mods that are on by default
+// (History view, Home, Sidekick, Usage, the context panel) are switched off, and Search is the one left on, and the person's layout places no mod block. The core still runs a task and snapshots its
 // turn (its "Turn: …" commit and the one before it; undoing is the History view's, a mod), and nothing of a mod shows: no `.harness/mods/`, no mod section in AGENTS.md, no mod block or slot part.
 // Home is the screen with the start buttons, so the task starts from ⌘K, which is the core's.
 
@@ -21,9 +21,13 @@ const coreLayout = {
     { type: "column", id: "home", children: [] },
     { type: "block", id: "work", content: { core: "task" } },
   ],
+  // Search is on, and its palette is an overlay block (no overlay, no ⌘K).
+  overlay: [{ mod: "search", block: "palette" }],
 };
 
-const modIds = ["history-view", "home", "sidekick"];
+const modIds = ["context-panel", "history-view", "home", "search", "sidekick", "usage"];
+/** Search stays on: with Home off, its ⌘K palette is the only way to start a task (a decision for Marco, not this spec). */
+const offIds = modIds.filter((id) => id !== "search");
 
 /**
  * No mod's block or slot part is in the window. A block: any layout block but the core's `work`, the off or missing
@@ -37,10 +41,13 @@ async function expectNoModUi(page: Page) {
   await expect(page.getByRole("button", { name: /Sidekick/ })).toHaveCount(0);
   await expect(page.getByRole("tab", { name: /Sidekick/ })).toHaveCount(0);
   await expect(page.getByText(/Sidekick/)).toHaveCount(0);
+  // Usage and the context panel are mods too: no Usage tab, no Open context button.
+  await expect(page.getByRole("tab", { name: "Usage" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Open context/ })).toHaveCount(0);
 }
 
 test("core alone: with no mods a task runs and its turn is snapshotted, and nothing of a mod appears", async () => {
-  const s = makeSandbox("core-alone", { mods: { on: Object.fromEntries(modIds.map((id) => [id, false])) } });
+  const s = makeSandbox("core-alone", { mods: { on: Object.fromEntries(offIds.map((id) => [id, false])) } });
   fs.writeFileSync(path.join(s.folder, "plan.md"), "mi plan original\n");
   const home = appHomeOf(s, harnessId);
   fs.mkdirSync(path.join(home, "layouts"), { recursive: true });
@@ -58,7 +65,7 @@ test("core alone: with no mods a task runs and its turn is snapshotted, and noth
       return (await hh.mods.view()).mods.map((m) => ({ id: m.id, on: m.on }));
     });
     expect(rows.map((r) => r.id).sort()).toEqual(modIds);
-    expect(rows.filter((r) => r.on)).toEqual([]);
+    expect(rows.filter((r) => r.on).map((r) => r.id)).toEqual(["search"]);
     await expectNoModUi(page);
 
     await page.keyboard.press(`${MOD}+k`);
@@ -85,7 +92,7 @@ test("core alone: with no mods a task runs and its turn is snapshotted, and noth
 
     // Settings, where a mod may add a tab and rows to Models and Usage. (Settings › Mods lists the mods, off: core's.)
     await page.getByRole("button", { name: "Settings" }).first().click();
-    for (const tab of ["Models", "Usage"]) {
+    for (const tab of ["Models"]) {
       await page.getByRole("tab", { name: tab }).click();
       await expect(page.getByRole("tabpanel", { name: tab })).toBeVisible();
       await expectNoModUi(page);

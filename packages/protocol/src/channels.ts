@@ -5,7 +5,7 @@
 import type { DataRecord, Language } from "@humanharness/harness-sdk";
 import type { Event } from "@humanharness/engines";
 import type { DataQueryResult, DataRequest } from "@humanharness/workspace";
-import type { BackendClient, ConnectionsClient, EngineConfigClient, HarnessClient, JobsClient, MaterialClient, SearchClient, TasksClient, ToolsClient } from "./client";
+import type { BackendClient, ConnectionsClient, EngineConfigClient, HarnessClient, JobsClient, MaterialClient, TasksClient, ToolsClient } from "./client";
 import type {
   ApproveOptions,
   AttentionView,
@@ -28,9 +28,6 @@ import type {
   ProfilesState,
   ReviewResult,
   ScopesView,
-  SearchAnswer,
-  SearchFilters,
-  SearchStatus,
   SendOptions,
   SettingsState,
   SetupOutput,
@@ -200,9 +197,6 @@ export interface Invoke {
   "hh:materialRemove": MaterialClient["remove"];
   "hh:materialOpen": MaterialClient["open"];
   "hh:materialCite": MaterialClient["cite"];
-  /** `filters` always goes (`{}` when the window gave none). */
-  "hh:search": (query: string, filters: SearchFilters) => SearchAnswer;
-  "hh:searchOpen": SearchClient["opened"];
   // `client.language` checks every answer's shape before use.
   "hh:languageState": (harness: Record<string, unknown>) => unknown;
   "hh:languageChoose": (tag: Language, harness: Record<string, unknown>) => unknown;
@@ -248,7 +242,6 @@ export interface Push {
   "hh:setupSteps": SetupStepsState;
   "hh:profiles": ProfilesState;
   "hh:materialStatus": MaterialView;
-  "hh:searchStatus": SearchStatus;
   "hh:textSize": TextSize;
   /** A `LanguageState`; the preload checks it. */
   "hh:language": unknown;

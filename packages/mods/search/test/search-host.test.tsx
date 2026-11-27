@@ -102,7 +102,7 @@ describe("search in the window (§5.1, §3)", () => {
     }
     render(
       <>
-        <SearchHost client={client} state={client.state} openScope={null} onIntent={() => {}} />
+        <SearchHost client={client} api={client.searchApi} state={client.state} openScope={null} onIntent={() => {}} />
         <OpenEarly />
       </>,
     );

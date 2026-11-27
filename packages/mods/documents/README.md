@@ -36,6 +36,9 @@ Documents is a core mod: it ships with the app and is on by default.
 - `src/main/agent.ts`: through `ctx.on.instructions` the writing guide, the harness's document kinds and the review
   rules; through `ctx.on.agentTools` the tools `ask_in_document`, `read_review` and `reply_comment`, only when the agent
   may edit the folder. In the app a tool call goes through `ReviewService`, so both sides share its locks.
+- `src/schema.ts`: the config a harness gives under `mods.documents` (the document kinds). The manifest checks it
+  (`@humanharness/harness-sdk` re-exports it), and the core reads the kinds with `documentsConfig` for the screen's
+  template check, the guide and `humanharness check`.
 - `src/ui.tsx`: registers the file opener and its panel. `src/ui/` holds the reader and the pieces of a review: the
   comment column, the bar, focus mode's margin markers, the marks on the text and the changes since the approval. Focus
   mode quiets the chat through `UiCtx.taskView.quiet`. It also holds a file's timeline and diffs: the reader's "File

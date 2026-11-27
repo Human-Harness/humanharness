@@ -101,7 +101,7 @@ describe("createRuntime", () => {
 
   it("a harness's declared document kinds reach AGENTS.md (document-reader §4.2)", async () => {
     const harness = await loadHarness(FIXTURE);
-    const withKinds = { ...harness, documents: { kinds: { adr: { when: "A decision with real alternatives.", sections: ["Status", "Decision"] } } } };
+    const withKinds = { ...harness, mods: { documents: { kinds: { adr: { when: "A decision with real alternatives.", sections: ["Status", "Decision"] } } } } };
     const { folder } = await setup({ steps: [] }, undefined, { harness: withKinds, ...reviewAgent(withKinds) });
     const agents = fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8");
     expect(agents).toContain("### Document kinds");

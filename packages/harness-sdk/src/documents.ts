@@ -7,7 +7,7 @@ export const DOCUMENT_KIND_ID = /^[a-z][a-z0-9-]*$/;
 export const CALLOUTS = ["note", "tip", "warning", "summary", "decision", "question"] as const;
 export type Callout = (typeof CALLOUTS)[number];
 
-/** A kind a harness declares (manifest `documents.kinds`). */
+/** A kind a harness declares (manifest `mods.documents.kinds`). */
 export interface DocumentKind {
   /** One sentence: when to use it. */
   when: string;

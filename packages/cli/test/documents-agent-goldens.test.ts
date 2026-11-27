@@ -9,7 +9,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { getEngine } from "@humanharness/engines";
 import { claudeResultLine, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
-import { type LoadedHarness, loadHarness } from "@humanharness/harness-sdk";
+import { type LoadedHarness, loadHarness, documentsConfig } from "@humanharness/harness-sdk";
 import type { CoreApp } from "@humanharness/mod-sdk/core";
 import { createWorkspace } from "@humanharness/runtime";
 import { ModHost, resolveMods, withModAgent } from "@humanharness/shell/tasks";
@@ -40,7 +40,7 @@ const LOADERS: Record<string, (harness: LoadedHarness, folder: string) => Promis
     const app = {
       documents: {
         canEdit: () => harness.permissions.edit === "folder",
-        kinds: () => harness.documents?.kinds ?? {},
+        kinds: () => documentsConfig(harness)?.kinds ?? {},
         folder: async () => ({ base: folder, roots: async () => [folder] }),
         openTask: async () => TASK,
       },

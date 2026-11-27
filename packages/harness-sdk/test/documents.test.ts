@@ -12,7 +12,7 @@ import {
   summarizeDocument,
   wordCount,
 } from "../src/documents";
-import { type HarnessInput, defineHarness } from "../src";
+import { type HarnessInput, TIERS, defineHarness, documentsConfig } from "../src";
 import { expectFast } from "../../../test/support/timing";
 
 describe("splitFrontMatter", () => {
@@ -173,64 +173,81 @@ const base: HarnessInput = {
   author: "t",
 };
 
-describe("manifest documents (§4.2)", () => {
+const withKinds = (kinds: Record<string, unknown>) => () => defineHarness({ ...base, mods: { documents: { kinds } } });
+
+describe("manifest mods.documents (§4.2)", () => {
   it("takes kinds with when, sections and an optional status", () => {
-    const h = defineHarness({
-      ...base,
-      documents: {
-        kinds: {
-          adr: { when: "A decision with real alternatives.", sections: ["Status", "Context"], status: ["proposed", "accepted"] },
-          analysis: { when: "Exploring options.", sections: ["Context"] },
-        },
-      },
-    });
-    expect(Object.keys(h.documents!.kinds)).toEqual(["adr", "analysis"]);
+    const h = withKinds({
+      adr: { when: "A decision with real alternatives.", sections: ["Status", "Context"], status: ["proposed", "accepted"] },
+      analysis: { when: "Exploring options.", sections: ["Context"] },
+    })();
+    expect(Object.keys(documentsConfig(h)!.kinds)).toEqual(["adr", "analysis"]);
   });
 
   it("refuses a bad id, an empty sections list, an empty heading and an empty when", () => {
-    expect(() => defineHarness({ ...base, documents: { kinds: { ADR: { when: "x", sections: ["A"] } } } })).toThrow();
-    expect(() => defineHarness({ ...base, documents: { kinds: { adr: { when: "x", sections: [] } } } })).toThrow();
-    expect(() => defineHarness({ ...base, documents: { kinds: { adr: { when: "x", sections: [" "] } } } })).toThrow();
-    expect(() => defineHarness({ ...base, documents: { kinds: { adr: { when: "", sections: ["A"] } } } })).toThrow();
-    expect(() => defineHarness({ ...base, documents: { kinds: { adr: { when: "x", sections: ["A"], status: [] } } } })).toThrow();
+    expect(withKinds({ ADR: { when: "x", sections: ["A"] } })).toThrow();
+    expect(withKinds({ adr: { when: "x", sections: [] } })).toThrow();
+    expect(withKinds({ adr: { when: "x", sections: [" "] } })).toThrow();
+    expect(withKinds({ adr: { when: "", sections: ["A"] } })).toThrow();
+    expect(withKinds({ adr: { when: "x", sections: ["A"], status: [] } })).toThrow();
   });
 
   it("refuses the same section twice in a kind", () => {
-    expect(() => defineHarness({ ...base, documents: { kinds: { adr: { when: "x", sections: ["Context", "context "] } } } })).toThrow(/twice/);
+    expect(withKinds({ adr: { when: "x", sections: ["Context", "context "] } })).toThrow(/twice/);
   });
 
   it("trims when and refuses a blank one", () => {
-    const h = defineHarness({ ...base, documents: { kinds: { adr: { when: "  A decision.  ", sections: ["A"] } } } });
-    expect(h.documents!.kinds.adr!.when).toBe("A decision.");
-    expect(() => defineHarness({ ...base, documents: { kinds: { adr: { when: "   ", sections: ["A"] } } } })).toThrow();
+    const h = withKinds({ adr: { when: "  A decision.  ", sections: ["A"] } })();
+    expect(documentsConfig(h)!.kinds.adr!.when).toBe("A decision.");
+    expect(withKinds({ adr: { when: "   ", sections: ["A"] } })).toThrow();
   });
 
   it("refuses a line break in when, a section or a status", () => {
-    expect(() => defineHarness({ ...base, documents: { kinds: { adr: { when: "a\nb", sections: ["A"] } } } })).toThrow();
-    expect(() => defineHarness({ ...base, documents: { kinds: { adr: { when: "a\rb", sections: ["A"] } } } })).toThrow();
-    expect(() => defineHarness({ ...base, documents: { kinds: { adr: { when: "x", sections: ["A\n## B"] } } } })).toThrow();
-    expect(() => defineHarness({ ...base, documents: { kinds: { adr: { when: "x", sections: ["A"], status: ["o\rk"] } } } })).toThrow();
+    expect(withKinds({ adr: { when: "a\nb", sections: ["A"] } })).toThrow();
+    expect(withKinds({ adr: { when: "a\rb", sections: ["A"] } })).toThrow();
+    expect(withKinds({ adr: { when: "x", sections: ["A\n## B"] } })).toThrow();
+    expect(withKinds({ adr: { when: "x", sections: ["A"], status: ["o\rk"] } })).toThrow();
   });
 
   it("explains a bad kind id", () => {
-    expect(() => defineHarness({ ...base, documents: { kinds: { ADR: { when: "x", sections: ["A"] } } } })).toThrow(/lowercase letters, digits and -/);
+    expect(withKinds({ ADR: { when: "x", sections: ["A"] } })).toThrow(/lowercase letters, digits and -/);
   });
 
   it("refuses the same status twice in a kind", () => {
-    expect(() => defineHarness({ ...base, documents: { kinds: { adr: { when: "x", sections: ["A"], status: ["Done", "done"] } } } })).toThrow(/twice/);
+    expect(withKinds({ adr: { when: "x", sections: ["A"], status: ["Done", "done"] } })).toThrow(/twice/);
   });
 
   it("caps kind ids at 64 characters and kinds at 20", () => {
     const one = { when: "x", sections: ["A"] };
-    expect(() => defineHarness({ ...base, documents: { kinds: { ["a".repeat(64)]: one } } })).not.toThrow();
-    expect(() => defineHarness({ ...base, documents: { kinds: { ["a".repeat(65)]: one } } })).toThrow();
+    expect(withKinds({ ["a".repeat(64)]: one })).not.toThrow();
+    expect(withKinds({ ["a".repeat(65)]: one })).toThrow();
     const kinds = (n: number) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`k${i}`, one]));
-    expect(() => defineHarness({ ...base, documents: { kinds: kinds(20) } })).not.toThrow();
-    expect(() => defineHarness({ ...base, documents: { kinds: kinds(21) } })).toThrow(/20/);
+    expect(withKinds(kinds(20))).not.toThrow();
+    expect(withKinds(kinds(21))).toThrow(/20/);
   });
 
-  it("D0: without documents the manifest has no documents field", () => {
-    expect("documents" in defineHarness(base)).toBe(false);
+  it("names the issue's place under mods.documents", () => {
+    expect(withKinds({ adr: { when: "x", sections: ["Context", "context "] } })).toThrow(/"mods",\s*"documents",\s*"kinds",\s*"adr",\s*"sections",\s*1/);
+  });
+
+  it("refuses a config without kinds, but takes the bare declaration", () => {
+    expect(() => defineHarness({ ...base, mods: { documents: { kind: {} } } })).toThrow(/kinds/);
+    const h = defineHarness({ ...base, mods: { documents: {} } });
+    expect(documentsConfig(h)).toBeUndefined();
+  });
+
+  it("refuses a top-level documents key and names mods.documents", () => {
+    const old = { ...base, documents: { kinds: { adr: { when: "x", sections: ["A"] } } } };
+    expect(() => defineHarness(old as HarnessInput)).toThrow(/move the top-level `documents` key to `mods\.documents`/);
+  });
+
+  it("a review tier is one of the manifest's tiers", () => {
+    for (const reviewTier of TIERS) expect(withKinds({ adr: { when: "x", sections: ["A"], reviewTier } })).not.toThrow();
+    expect(withKinds({ adr: { when: "x", sections: ["A"], reviewTier: "huge" } })).toThrow();
+  });
+
+  it("D0: without mods.documents there is no config", () => {
+    expect(documentsConfig(defineHarness(base))).toBeUndefined();
   });
 });
 

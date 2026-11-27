@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 import type { AgentToolSet } from "@humanharness/blocks";
-import { JOB_RESULT_TOOL, type LoadedHarness, STEP_OUTPUT_TOOL, allBlocks, blockToolName } from "@humanharness/harness-sdk";
+import { JOB_RESULT_TOOL, type LoadedHarness, STEP_OUTPUT_TOOL, allBlocks, blockToolName, documentsConfig } from "@humanharness/harness-sdk";
 import type { TurnEndInfo } from "@humanharness/mod-sdk";
 import type { TurnEnd } from "../task-manager";
 import { modOff, modReloaded } from "./agent-answers";
@@ -27,7 +27,7 @@ export function withModAgent(
   folder: string,
   mods: () => Pick<ModHost, "instructions" | "agentTools" | "view"> | null,
 ): { instructions: () => Promise<string[][]>; agentTools: () => Promise<AgentToolSet | undefined> } {
-  const info = { canEdit: harness.permissions.edit === "folder", folder, documentKinds: harness.documents?.kinds ?? {} };
+  const info = { canEdit: harness.permissions.edit === "folder", folder, documentKinds: documentsConfig(harness)?.kinds ?? {} };
   return {
     instructions: async () => (await mods()?.instructions(info)) ?? [],
     agentTools: async () => {

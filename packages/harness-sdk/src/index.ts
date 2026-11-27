@@ -4,7 +4,6 @@ import { z } from "zod";
 import { type Block, blockToolName } from "./block";
 import { CORE_BLOCKS, INPUT_CORE_BLOCKS, MODE_CORE_BLOCKS, PHASE_CORE_BLOCKS, RESERVED_BLOCK_NAMES } from "./core-blocks";
 import { dataSchema } from "./data";
-import { DOCUMENT_KIND_ID } from "./documents";
 import { CORE_SHEET_SECTIONS, MATERIAL_STAGE_KEYS, hasMaterial, materialSchema } from "./material";
 import { backendSchema, hatchProblems, linkedFoldersSchema } from "./hatches";
 import { JOB_RESULT_TOOL, jobProblems, jobsSchema } from "./jobs";
@@ -18,6 +17,7 @@ import { secretsSchema } from "./secrets";
 import { SETTING_NAME, checkSettingFields, settingFieldSchema, settingsSchema } from "./settings";
 import { type HarnessSetupStep, setupFormSpec, setupStepsSchema } from "./setup";
 import { contextPanelSchema } from "./context-panel";
+import { documentsSchema } from "./documents-config";
 import { SIDEKICK_PROCESS, sidekickSchema } from "./sidekick";
 import { STEP_OUTPUT_TOOL, aiStepOf, recipeProblems } from "./recipes";
 import { preProblems, preSchema, preTokensSchema, expectsSchema } from "./steps";
@@ -51,6 +51,7 @@ export * from "./recipes";
 export * from "./hatches";
 export * from "./harness-backend";
 export * from "./documents";
+export * from "./documents-config";
 export * from "./review";
 export * from "./review-schema";
 export * from "./secrets";
@@ -197,34 +198,6 @@ const reservedMcpNames = (m: { tools?: Record<string, string>; material?: unknow
   ...(hasMaterial(m) ? ["material"] : []),
 ];
 
-/** One line of kind text: a line break would turn the rest into live Markdown in `AGENTS.md`. */
-const oneLine = (max: number) =>
-  z
-    .string()
-    .trim()
-    .min(1)
-    .max(max)
-    .regex(/^[^\r\n]*$/, "Use one line, without line breaks");
-/** One kind of document the harness's agent writes (document-reader spec §4.2). */
-const documentKindSchema = z.object({
-  when: oneLine(300),
-  sections: z.array(oneLine(120)).min(1).max(20),
-  status: z.array(oneLine(40)).min(1).max(10).optional(),
-  /** The tier of a "Review <title>" task for this kind (review spec §11.3). Absent: standard. */
-  reviewTier: z.enum(TIERS).optional(),
-});
-/** At most this many kinds: each one adds its template to the agent's `AGENTS.md`. */
-const MAX_DOCUMENT_KINDS = 20;
-/** Document kinds with a template of required `##` sections. Absent: only the base writing guide (D0). */
-const documentsSchema = z.object({
-  kinds: z
-    .record(
-      z.string().max(64, "A kind id has at most 64 characters").regex(DOCUMENT_KIND_ID, "A kind id is lowercase letters, digits and -"),
-      documentKindSchema,
-    )
-    .refine((k) => Object.keys(k).length <= MAX_DOCUMENT_KINDS, { message: `At most ${MAX_DOCUMENT_KINDS} document kinds` }),
-});
-
 const manifestFields = z.object({
   id: z.string().regex(HARNESS_ID),
   name: text,
@@ -282,8 +255,6 @@ const manifestFields = z.object({
   backend: backendSchema.optional(),
   /** Each scope may carry its own engine config in `.harness/engine/<scope>/` (hatches spec §5). Absent: none (D0). */
   enginePresets: z.literal(true).optional(),
-  /** Kinds of documents with section templates; the reader checks them and only warns (document-reader spec §4). Absent: none (D0). */
-  documents: documentsSchema.optional(),
   /** One line under the name on the home screen. */
   tagline: text.optional(),
   /** How translations of this harness's screens should sound, in English ("warm and informal, short sentences"). */
@@ -355,6 +326,14 @@ const manifestFields = z.object({
     const config = contextPanelSchema.safeParse(m.mods["context-panel"]);
     if (!config.success) {
       for (const i of config.error.issues) ctx.addIssue({ code: "custom", path: ["mods", "context-panel", ...i.path], message: i.message });
+    }
+  }
+  // Documents' config is checked with its mod's schema; the bare `{}` only declares the mod.
+  if (m.mods?.documents && Object.keys(m.mods.documents).length > 0) {
+    const config = documentsSchema.safeParse(m.mods.documents);
+    if (!config.success) {
+      // The whole issue: a bad kind id's message is nested inside zod's `invalid_key` one.
+      for (const i of config.error.issues) ctx.addIssue({ ...i, path: ["mods", "documents", ...i.path] });
     }
   }
   for (const [id, a] of Object.entries(m.actions)) {
@@ -563,26 +542,11 @@ const manifestFields = z.object({
       if (Object.hasOwn(m.actions, key)) ctx.addIssue({ code: "custom", path: ["actions", key], message: `"${key}" is reserved for a material stage: use another action id` });
     }
   }
-  // Document kinds (document-reader spec §4.2): a section named twice could never be told apart by the check.
-  for (const [id, kind] of Object.entries(m.documents?.kinds ?? {})) {
-    const seen = new Set<string>();
-    kind.sections.forEach((s, i) => {
-      const key = s.trim().toLowerCase();
-      if (seen.has(key)) ctx.addIssue({ code: "custom", path: ["documents", "kinds", id, "sections", i], message: `"${s}" is listed twice` });
-      seen.add(key);
-    });
-    const statuses = new Set<string>();
-    kind.status?.forEach((s, i) => {
-      const key = s.toLowerCase();
-      if (statuses.has(key)) ctx.addIssue({ code: "custom", path: ["documents", "kinds", id, "status", i], message: `"${s}" is listed twice` });
-      statuses.add(key);
-    });
-  }
   // Hatches (hatches spec §3.1).
   for (const p of hatchProblems(m)) ctx.addIssue({ code: "custom", path: p.path, message: p.message });
 });
 
-/** Refuses the old top-level `sidekick` and `context` keys by name: `z.object` would drop them and the config would silently be gone. */
+/** Refuses the old top-level `sidekick`, `context` and `documents` keys by name: `z.object` would drop them and the config would silently be gone. */
 const manifestSchema = z.preprocess((value, ctx) => {
   if (typeof value === "object" && value !== null) {
     if ((value as { sidekick?: unknown }).sidekick !== undefined) {
@@ -590,6 +554,9 @@ const manifestSchema = z.preprocess((value, ctx) => {
     }
     if ((value as { context?: unknown }).context !== undefined) {
       ctx.addIssue({ code: "custom", path: ["context"], message: "The context panel's config is a mod's: move the top-level `context` key to `mods.context-panel`" });
+    }
+    if ((value as { documents?: unknown }).documents !== undefined) {
+      ctx.addIssue({ code: "custom", path: ["documents"], message: "Documents' config is a mod's: move the top-level `documents` key to `mods.documents`" });
     }
   }
   return value;

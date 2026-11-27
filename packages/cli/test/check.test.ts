@@ -654,8 +654,8 @@ describe("check: settings", () => {
 });
 
 describe("check: document kinds (document-reader spec §4.2)", () => {
-  const AFTER = '  questions: { tier: "light" },';
-  const withKinds = (kinds: string) => (d: string) => replaceIn(d, "harness.config.ts", AFTER, `${AFTER}\n  documents: { kinds: { ${kinds} } },`);
+  const MODS = "mods: { example: {} },";
+  const withKinds = (kinds: string) => (d: string) => replaceIn(d, "harness.config.ts", MODS, `mods: { example: {}, documents: { kinds: { ${kinds} } } },`);
   const tokenRules = (r: CheckResult) => r.findings.filter((f) => f.rule === "documents-tokens");
 
   it("a few short kinds give no finding", async () => {

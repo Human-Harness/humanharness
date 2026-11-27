@@ -7,7 +7,7 @@ export interface DocumentHost {
   open(path: string, anchor?: string): void;
   /** A local image as a data: URL; null when refused or missing. */
   image(path: string): Promise<string | null>;
-  /** The harness's document kinds (manifest `documents.kinds`); absent without them (D0). */
+  /** The harness's document kinds (manifest `mods.documents.kinds`); absent without them (D0). */
   kinds?: Record<string, DocumentKind>;
 }
 

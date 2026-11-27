@@ -11,6 +11,7 @@ import {
   pluginsAccepted,
   profileFormSpec,
   settingsView,
+  documentsConfig,
 } from "@humanharness/harness-sdk";
 import type { AppConfig, AppState, ModeView, ModelsView } from "@humanharness/protocol";
 import { syncLocations, syncStatus } from "@humanharness/workspace";
@@ -74,6 +75,7 @@ export function createAppState(d: AppStateDeps): () => Promise<AppState> {
     const interviews = interviewCollections(harness);
     const parallel = parallelInfo(harness, saved, engineHold(saved.engineId));
     const hatches = hatchesState(harness);
+    const documents = documentsConfig(harness);
     const state: AppState = {
       harness: {
         id: harness.id,
@@ -184,7 +186,7 @@ export function createAppState(d: AppStateDeps): () => Promise<AppState> {
       // Only a harness that declares jobs sends them: the Jobs tab and the inbox's Jobs section (part 3 D0).
       ...(jobs ? { jobs } : {}),
       // The reader's template check (document-reader spec §4.3); absent without kinds (D0).
-      ...(harness.documents ? { documents: { kinds: harness.documents.kinds } } : {}),
+      ...(documents ? { documents: { kinds: documents.kinds } } : {}),
       // Documents can be reviewed only when the agent may edit the folder (review spec D0).
       ...(harness.permissions.edit === "folder" ? { review: true as const } : {}),
       // Only a harness that declares a hatch sends this: Scope settings (hatches D0).

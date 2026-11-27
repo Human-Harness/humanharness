@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { callRpc } from "@humanharness/blocks";
 import { getEngine } from "@humanharness/engines";
 import { claudeResultLine, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
-import { loadHarness } from "@humanharness/harness-sdk";
+import { loadHarness, documentsConfig } from "@humanharness/harness-sdk";
 import type { AgentTool, MainCtx } from "@humanharness/mod-sdk";
 import type { CoreAgentInfo } from "@humanharness/mod-sdk/core";
 import { type HarnessRuntime, type HarnessWorkspace, createRuntime, createWorkspace } from "@humanharness/runtime";
@@ -126,7 +126,7 @@ describe("the mods' instructions()", () => {
       const { ui, folder } = await runtime(config, () => h);
       await ui("task");
       expect(seen).toEqual([["instructions", { canEdit }], ["agentTools", { canEdit }]]);
-      const info = { canEdit, folder, documentKinds: (await loadHarness(config)).documents?.kinds ?? {} };
+      const info = { canEdit, folder, documentKinds: documentsConfig(await loadHarness(config))?.kinds ?? {} };
       expect(ours).toEqual([["instructions", info], ["agentTools", info]]);
     }
   });

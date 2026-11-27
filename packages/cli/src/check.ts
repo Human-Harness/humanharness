@@ -25,6 +25,7 @@ import {
   stepProblems,
   toolProblems,
   type z,
+  documentsConfig,
 } from "@humanharness/harness-sdk";
 import { layoutSchema } from "@humanharness/mod-sdk";
 import { estimateTokens, settingsLines } from "@humanharness/workspace";
@@ -681,7 +682,7 @@ const DOCUMENT_KINDS_TOKENS_WARN = 400;
 
 /** Document kinds (document-reader spec §4.2): their part of AGENTS.md is in every session's stable prefix too. */
 async function documentKindsFindings(h: LoadedHarness): Promise<Finding[]> {
-  const kinds = h.documents?.kinds;
+  const kinds = documentsConfig(h)?.kinds;
   if (!kinds || Object.keys(kinds).length === 0) return [];
   const tokens = await documentKindsTokens(h, kinds);
   if (tokens <= DOCUMENT_KINDS_TOKENS_WARN) return [];

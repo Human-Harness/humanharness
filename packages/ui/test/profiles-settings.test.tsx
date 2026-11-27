@@ -6,6 +6,7 @@ import type { AppState } from "../src/client";
 import { type SettingsTab, SettingsPage } from "../src/SettingsPage";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
+import { withUsage } from "./usage-mod";
 
 afterEach(cleanup);
 
@@ -28,7 +29,7 @@ function family() {
 function Sheet({ client, tab: first }: { client: FakeClient; tab: SettingsTab }) {
   const [state, setState] = useState<AppState>(client.state);
   const [tab, setTab] = useState<SettingsTab>(first);
-  return <SettingsPage client={client} state={state} tab={tab} onTab={setTab} onChange={setState} onClose={() => {}} onSetup={() => {}} />;
+  return withUsage(<SettingsPage client={client} state={state} tab={tab} onTab={setTab} onChange={setState} onClose={() => {}} onSetup={() => {}} />);
 }
 
 describe("Settings › General › People (profiles spec §5)", () => {

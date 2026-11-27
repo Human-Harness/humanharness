@@ -2,18 +2,18 @@
 import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it } from "vitest";
-import type { AppState, EngineOption } from "../src/client";
-import { SettingsPage } from "../src/SettingsPage";
+import { type AppState, type EngineOption, compactTokens, formatReset } from "@humanharness/ui";
+import { SettingsPage } from "../../../ui/src/SettingsPage";
 import { UsageTab } from "../src/UsageTab";
-import { compactTokens, formatReset } from "../src/usage";
-import { FakeClient } from "./fake-client";
-import { renderIn } from "./render";
+import { withUsage } from "../../../ui/test/usage-mod";
+import { FakeClient } from "../../../ui/test/fake-client";
+import { renderIn } from "../../../ui/test/render";
 
 afterEach(cleanup);
 
 function Sheet({ client }: { client: FakeClient }) {
   const [state, setState] = useState<AppState>(client.state);
-  return <SettingsPage client={client} state={state} tab="usage" onTab={() => {}} onChange={setState} onClose={() => {}} onSetup={() => {}} />;
+  return withUsage(<SettingsPage client={client} state={state} tab="usage" onTab={() => {}} onChange={setState} onClose={() => {}} onSetup={() => {}} />);
 }
 
 const in2h = () => new Date(Date.now() + 2 * 3600_000).toISOString();

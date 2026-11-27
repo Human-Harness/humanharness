@@ -13,6 +13,7 @@ import {
   searchCommands,
   settingAvailable,
 } from "../client";
+import type { BlockRegistry } from "../layout/registry";
 import { searchable, tabLabel, visibleTabs } from "../settings-tabs";
 
 /** What the window's state says about each setting's `needs`. */
@@ -47,12 +48,12 @@ export function matched(query: string, all: readonly Candidate[]): SearchHitView
  * Settings rows for a typed query (§6): the registry's rows this state shows, then the harness's own fields. A row is
  * its label and its tab's name, never a value (a connection's token, a field's text).
  */
-export function settingRows(t: TFunction, state: AppState, query: string): SearchHitView[] {
+export function settingRows(t: TFunction, state: AppState, query: string, registry?: BlockRegistry): SearchHitView[] {
   if (!query.trim()) return [];
   const can = settingState(state);
-  const tabs = new Set(visibleTabs(state));
+  const tabs = new Set(visibleTabs(state, registry));
   const row = (id: string, tab: SearchSettingsTab, label: string, extra: string[]): Candidate => {
-    const section = tabLabel(t, state, tab);
+    const section = tabLabel(t, state, tab, registry);
     return {
       id,
       label,
@@ -66,10 +67,10 @@ export function settingRows(t: TFunction, state: AppState, query: string): Searc
 }
 
 /** Action rows (§6): all available ones in the table's order with nothing typed (plan 1 deviation 9), else the matching ones. */
-export function commandRows(t: TFunction, state: AppState, query: string, chat: ChatSearchContext | null, scopes: readonly ScopeView[], openScope: string | null): SearchHitView[] {
-  const tabs = visibleTabs(state).filter(searchable);
+export function commandRows(t: TFunction, state: AppState, query: string, chat: ChatSearchContext | null, scopes: readonly ScopeView[], openScope: string | null, registry?: BlockRegistry): SearchHitView[] {
+  const tabs = visibleTabs(state, registry).filter(searchable);
   const all = searchCommands({ chat, scopes, openScope, tabs }).map((c): Candidate => {
-    const vars = c.command === "open-settings" && c.arg ? { tab: tabLabel(t, state, c.arg as SearchSettingsTab) } : (c.vars ?? {});
+    const vars = c.command === "open-settings" && c.arg ? { tab: tabLabel(t, state, c.arg as SearchSettingsTab, registry) } : (c.vars ?? {});
     const label = t(c.label, vars);
     const id = `command:${c.command}${c.arg ? `:${c.arg}` : ""}`;
     return { id, label, extra: [...c.keywords], hit: (title) => ({ id, kind: "command", title, context: [], hint: null, target: { kind: "command", command: c.command, ...(c.arg ? { arg: c.arg } : {}) } }) };

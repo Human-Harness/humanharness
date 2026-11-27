@@ -7,6 +7,7 @@ import { PluginsTab, type SettingsSub } from "../src/plugins/PluginsTab";
 import { type SettingsTab, SettingsPage } from "../src/SettingsPage";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
+import { withUsage } from "./usage-mod";
 
 afterEach(cleanup);
 
@@ -15,7 +16,7 @@ const ready = { language: "en" as const, folder: "/Users/me/Documents/Demo", eng
 function Sheet({ client, initialTab = "plugins" }: { client: FakeClient; initialTab?: SettingsTab }) {
   const [state, setState] = useState<AppState>(client.state);
   const [tab, setTab] = useState<SettingsTab>(initialTab);
-  return <SettingsPage client={client} state={state} tab={tab} onTab={setTab} onChange={setState} onClose={() => {}} onSetup={() => {}} />;
+  return withUsage(<SettingsPage client={client} state={state} tab={tab} onTab={setTab} onChange={setState} onClose={() => {}} onSetup={() => {}} />);
 }
 
 const row = (over: Partial<PluginRow> = {}): PluginRow => ({ id: "oncall", name: "On-call", version: "1.2.0", origin: "local", folder: "~/my-plugins/oncall", status: "on", ...over });

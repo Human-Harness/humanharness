@@ -11,7 +11,7 @@ import { ModelsTab } from "../src/ModelsTab";
 import { commandRows } from "../src/search/local";
 import { SettingsPage } from "../src/SettingsPage";
 import { tabLabel, visibleTabs } from "../src/settings-tabs";
-import { UsageTab } from "../src/UsageTab";
+import { UsageTab } from "../../mods/usage/src/UsageTab";
 import { FakeClient } from "./fake-client";
 import { renderIn } from "./render";
 

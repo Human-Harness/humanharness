@@ -52,5 +52,10 @@ export { Group, Row, SectionHead };
 export { ownName, shownLanguage, systemLanguage } from "./language";
 export { ProfileSwitcher } from "./ProfileSwitcher";
 export { useCurrentWindows } from "./UsageMeter";
+// Settings › Usage (a core mod) builds with the Models tab's rows, the profile helpers and the slot boundary.
+export { QUESTIONS, taskRows } from "./ModelsTab";
+export { shownTitle, useProfiles } from "./ProfileSwitcher";
+export { SlotBoundary } from "./layout/BlockBoundary";
+export { useBlocks } from "./layout/registry";
 export { useTasks } from "./parallel/useTasks";
 export type { SearchIntent } from "./search/intent";

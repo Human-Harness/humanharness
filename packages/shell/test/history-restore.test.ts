@@ -1,7 +1,7 @@
 import { RESTORE_POINT, RESTORE_TASK } from "@humanharness/protocol";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { GoBackAsk } from "../src/main/go-back";
-import { type HistoryRestoreDeps, historyRestores } from "../src/main/history-restore";
+import { type FileRestoreService, type HistoryRestoreDeps, historyRestores } from "../src/main/history-restore";
 
 const byPaths = vi.hoisted(() => ({ restoreTaskByPaths: vi.fn() }));
 vi.mock("../src/main/restore-paths", () => byPaths);
@@ -144,5 +144,106 @@ describe("restoreTask by paths", () => {
       await expect(svc.restoreTask("t1")).rejects.toThrow("Going back can't run now");
       expect(asked).toHaveLength(0);
     }
+  });
+});
+
+// One file's go-back for a core mod (`ctx.app.history.restoreFile`): the mod's service checks and writes; the core
+// asks, and only its yes opens the restore guard.
+describe("restoreFile (a core mod's one-file go-back)", () => {
+  const prompt = { path: "a.md", author: { kind: "person" as const }, at: "2026-10-28T09:00:00.000Z", kind: "turn" as const } as never;
+  const sender = { id: "asking-window" } as never;
+
+  function mod(over: Partial<FileRestoreService> = {}) {
+    const wrote: unknown[] = [];
+    const service: FileRestoreService = {
+      restorePrompt: vi.fn(async () => ({ ok: true as const, prompt })),
+      restore: vi.fn<FileRestoreService["restore"]>(async (file, commit, guard) => {
+        await guard(async (history) => void wrote.push([file, commit, history]));
+        return { ok: true };
+      }),
+      ...over,
+    };
+    return { service, wrote };
+  }
+
+  it("after a yes on the asking window, writes through the restore guard and tells the app", async () => {
+    const guarded = { id: "guarded" };
+    const restoreWith = vi.fn<HistoryRestoreDeps["restoreWith"]>(async (run) => void (await run(guarded as never)));
+    const { svc, asked, d } = setup({ restoreWith });
+    const { service, wrote } = mod();
+    expect(await svc.restoreFile(sender, "a.md", SHA("1"), service)).toEqual({ ok: true });
+    expect(asked).toEqual([{ sender, ask: { kind: "file", prompt } }]);
+    expect(service.restorePrompt).toHaveBeenCalledWith("a.md", SHA("1"));
+    expect(restoreWith).toHaveBeenCalledTimes(1);
+    expect(wrote).toEqual([["a.md", SHA("1"), guarded]]);
+    expect(d.afterRestore).toHaveBeenCalledTimes(1);
+  });
+
+  it("a no writes nothing: the service never gets the guard", async () => {
+    const restoreWith = vi.fn();
+    const { svc, say, d } = setup({ restoreWith });
+    say(false);
+    const { service } = mod();
+    expect(await svc.restoreFile(sender, "a.md", SHA("1"), service)).toEqual({ ok: false, reason: "cancelled" });
+    expect(service.restore).not.toHaveBeenCalled();
+    expect(restoreWith).not.toHaveBeenCalled();
+    expect(d.afterRestore).not.toHaveBeenCalled();
+  });
+
+  it("no dialog, no guard: a go-back the service refuses asks nothing and gets none", async () => {
+    const { svc, asked } = setup();
+    const { service } = mod({ restorePrompt: vi.fn(async () => ({ ok: false as const, reason: "busy" as const })) });
+    expect(await svc.restoreFile(sender, "a.md", SHA("1"), service)).toEqual({ ok: false, reason: "busy" });
+    expect(asked).toHaveLength(0);
+    expect(service.restore).not.toHaveBeenCalled();
+  });
+
+  it("only the dialog's true is a yes", async () => {
+    const { svc } = setup({ confirmGoBack: async () => "yes" as never });
+    const { service } = mod();
+    expect(await svc.restoreFile(sender, "a.md", SHA("1"), service)).toEqual({ ok: false, reason: "cancelled" });
+    expect(service.restore).not.toHaveBeenCalled();
+  });
+
+  it("one dialog at a time across the three go-backs", async () => {
+    let answer: (yes: boolean) => void = () => undefined;
+    const confirm = vi.fn(() => new Promise<boolean>((r) => (answer = r)));
+    const { svc } = setup({ confirmGoBack: confirm });
+    const first = mod();
+    const second = mod();
+    const open = svc.restoreFile(sender, "a.md", SHA("1"), first.service);
+    await vi.waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+    expect(await svc.restoreFile(sender, "b.md", SHA("1"), second.service)).toEqual({ ok: false, reason: "cancelled" });
+    expect(await svc.restorePoint(SHA("1"))).toEqual({ ok: false, reason: "cancelled" });
+    expect(await svc.restoreTask("t2")).toEqual({ ok: false, reason: "cancelled" });
+    expect(second.service.restore).not.toHaveBeenCalled();
+    answer(false);
+    await open;
+    // And the other way round: while a folder go-back asks, a file's gets no guard.
+    const folder = svc.restorePoint(SHA("1"));
+    await vi.waitFor(() => expect(confirm).toHaveBeenCalledTimes(2));
+    expect(await svc.restoreFile(sender, "b.md", SHA("1"), second.service)).toEqual({ ok: false, reason: "cancelled" });
+    expect(second.service.restore).not.toHaveBeenCalled();
+    answer(false);
+    await folder;
+  });
+
+  it("an answer that is not ok tells the app nothing; a throw is answered as a failure", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { svc, d } = setup();
+    expect(await svc.restoreFile(sender, "a.md", SHA("1"), mod({ restore: async () => ({ ok: false, reason: "unsafe" }) }).service)).toEqual({ ok: false, reason: "unsafe" });
+    const boom = mod({ restore: () => Promise.reject(new Error("boom")) });
+    expect(await svc.restoreFile(sender, "a.md", SHA("1"), boom.service)).toEqual({ ok: false, reason: "failed" });
+    expect(d.afterRestore).not.toHaveBeenCalled();
+  });
+
+  it("the guard ends with the call: kept, it writes nothing later", async () => {
+    const restoreWith = vi.fn(async () => {});
+    const { svc } = setup({ restoreWith });
+    let kept: Parameters<FileRestoreService["restore"]>[2] | undefined;
+    const { service } = mod({ restore: async (_file, _commit, guard) => ((kept = guard), { ok: true }) });
+    await svc.restoreFile(sender, "a.md", SHA("1"), service);
+    await expect(kept!(async () => {})).rejects.toThrow("over");
+    expect(restoreWith).not.toHaveBeenCalled();
   });
 });

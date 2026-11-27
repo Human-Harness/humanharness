@@ -1,7 +1,9 @@
 import { APP_SCOPE, MAIN_SCOPE, flushFileIndexes, noteSlug, notesPrefix, readNotes, tasksFile, writeNote } from "@humanharness/workspace";
-import { BrowserWindow, Notification, app, dialog, ipcMain, nativeImage, nativeTheme, powerMonitor, protocol, session, shell } from "electron";
+import { BrowserWindow, Notification, app, dialog, ipcMain, nativeImage, nativeTheme, powerMonitor, protocol, session, shell, type WebContents } from "electron";
 import { CORE_MODS } from "./mods/core-mods";
 import type { CoreAppParts } from "./mods/core-app";
+import { coreDocuments } from "./mods/core-documents";
+import type { FileRestoreService } from "./history-restore";
 import { ConfigStore, historyDir } from "./config";
 import { DEFAULT_LANGUAGE, PROFILE_COLLECTION, hasEnginePresets, hasJobs, hasSecrets, contextPanelConfig, hasTools, languageName, pluginsAccepted, resolveInHarness } from "@humanharness/harness-sdk";
 import { MOD_SCHEME } from "./mods/mod-scheme";
@@ -148,7 +150,13 @@ export async function onLoaded(d: LifecycleDeps): Promise<void> {
     workDir: (mod, base, id) => sessionWorkDir(app.getPath("userData"), mod, base, id),
     writeBrief: writeSessionBrief,
     open: (o) => new EngineSession(o),
-    history: { restorePoint: (sha) => restores().restorePoint(sha), restoreTask: (id, includeShared) => restores().restoreTask(id, includeShared) },
+    history: {
+      restorePoint: (sha) => restores().restorePoint(sha),
+      restoreTask: (id, includeShared) => restores().restoreTask(id, includeShared),
+      // The sender is the WebContents the mod's `handleFrom` got: the dialog attaches to its window.
+      restoreFile: (sender, file, commit, service) => restores().restoreFile(sender as WebContents, file, commit, service as unknown as FileRestoreService),
+    },
+    documents: coreDocuments({ validConfig, baseOf, workReferences, currentHistory, tasks: () => d.tasks, quitting: () => d.quitting, turnBlocked, actions: () => harness.actions, here }),
     uiLanguage: async () => languageName((await d.config.load()).language ?? DEFAULT_LANGUAGE),
     // The daily card (sidekick plan Decision 12): the day's note titles in every scope and its tokens, titles only.
     // The task manager can't list open tasks (Open question 7): nothing is open.

@@ -1,7 +1,7 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { AgentInfo, AgentTool, DailyInfo, Disposer, HoldVerdict, MainCtx, ModDefinition, PhaseMovedInfo, SendInfo, SendVerdict, TaskRef, TurnEndInfo } from "@humanharness/mod-sdk";
-import type { CoreApp, CoreMainCtx, FirstMessageSection } from "@humanharness/mod-sdk/core";
+import type { CoreApp, CoreMainCtx, CoreSender, FirstMessageSection } from "@humanharness/mod-sdk/core";
 import type { ModRow } from "@humanharness/protocol";
 import type { PushChannel } from "@humanharness/protocol/channels";
 import { isLines, modOff, modReloaded, readAgentTools } from "./agent-answers";
@@ -17,7 +17,7 @@ export const BEFORE_SEND_MS = 6_000;
 export const HOOK_MS = 5_000;
 export const STRIKES = 3;
 
-type HookName = "beforeSend" | "turnStart" | "turnEnd" | "taskOpen" | "taskClose" | "betweenTasks" | "phaseMoved" | "daily" | "close" | "instructions" | "agentTools" | "refresh" | "firstMessage" | "contextChanged" | "dataChanged" | "restored" | "baseGone";
+type HookName = "beforeSend" | "turnStart" | "turnEnd" | "taskOpen" | "taskClose" | "betweenTasks" | "phaseMoved" | "daily" | "close" | "instructions" | "agentTools" | "refresh" | "firstMessage" | "contextChanged" | "dataChanged" | "restored" | "baseGone" | "historyCommit" | "windowClosed" | "folderChanged";
 const HOOKS: readonly HookName[] = ["beforeSend", "turnStart", "turnEnd", "taskOpen", "taskClose", "betweenTasks", "phaseMoved", "daily", "close", "instructions", "agentTools"];
 /** A local calendar day, YYYY-MM-DD. */
 export const localDay = (d: Date): string => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -71,7 +71,7 @@ interface Running {
   version: number;
   strikes: number;
   hooks: Map<HookName, Set<Fn>>;
-  channels: Map<string, (p: unknown) => unknown>;
+  channels: Map<string, (p: unknown, sender?: CoreSender) => unknown>;
   disposers: Disposer[];
   service?: unknown;
   /** Sends this mod holds, by token: each ends once (resolved, or cancelled). */
@@ -209,24 +209,26 @@ export class ModHost {
   }
 
   /** What only a core mod's ctx has: `app` and `onRefresh` (its `push` also takes an app push channel, `pusher`). */
-  private core(r: Running, add: (name: HookName) => (fn: Fn) => Disposer): Partial<Pick<CoreMainCtx<unknown>, "app" | "onRefresh" | "handle">> & { coreOn?: Record<string, unknown> } {
+  private core(r: Running, add: (name: HookName) => (fn: Fn) => Disposer): Partial<Pick<CoreMainCtx<unknown>, "app" | "onRefresh" | "handle" | "handleFrom">> & { coreOn?: Record<string, unknown> } {
     if (r.mod.shipped !== "core") return {};
     const base = this.d.coreApp?.(r.mod.json.id);
     // The context-changed listeners live in the host (a restart builds a new one): the mod's registration is a hook.
     const app = base ? { ...base, tasks: { ...base.tasks, onContextChanged: add("contextChanged") as unknown as CoreApp["tasks"]["onContextChanged"] } } : undefined;
-    const handle: CoreMainCtx<unknown>["handle"] = (name, fn) => {
+    const answer = (name: string, run: (args: unknown[], sender: CoreSender | undefined) => unknown): Disposer => {
       if (!(MOD_APP_CHANNELS as readonly string[]).includes(name)) throw new Error(`Not an app channel a core mod answers: ${String(name)}`);
       if (this.appChannel(name)) throw new Error(`Another mod already handles ${name}`);
-      r.channels.set(name, (args) => fn(...(Array.isArray(args) ? args : [])));
+      r.channels.set(name, (args, sender) => run(Array.isArray(args) ? args : [], sender));
       const off = () => void r.channels.delete(name);
       r.disposers.push(off);
       return off;
     };
+    const events = ["firstMessage", "dataChanged", "restored", "baseGone", "historyCommit", "windowClosed", "folderChanged"] as const;
     return {
       ...(app ? { app } : {}),
-      handle,
+      handle: (name, fn) => answer(name, (args) => fn(...args)),
+      handleFrom: (name, fn) => answer(name, (args, sender) => fn(sender!, ...args)),
       onRefresh: add("refresh") as CoreMainCtx<unknown>["onRefresh"],
-      coreOn: { firstMessage: add("firstMessage"), dataChanged: add("dataChanged"), restored: add("restored"), baseGone: add("baseGone") },
+      coreOn: Object.fromEntries(events.map((n) => [n, add(n)])),
     };
   }
 
@@ -402,10 +404,10 @@ export class ModHost {
    * A window call on app channel `name`, with its arguments, to the core mod that answers it. Unlike a mod's own
    * channel, it may take as long as it needs and a throw reaches the window as is: neither counts as a strike.
    */
-  async channel(name: string, args: unknown[]): Promise<unknown> {
+  async channel(name: string, args: unknown[], sender: CoreSender): Promise<unknown> {
     const r = this.appChannel(name);
     if (!r) throw new Error(`No mod handles ${name}`);
-    return r.channels.get(name)!(args);
+    return r.channels.get(name)!(args, sender);
   }
 
   turnStart(task: TaskRef): Promise<void> {
@@ -434,6 +436,18 @@ export class ModHost {
   /** `base` is gone (a folder move, a forgotten profile). */
   baseGone(base: string): Promise<void> {
     return this.each("baseGone", base);
+  }
+  /** The history saved a commit touching `paths`. */
+  historyCommit(paths: readonly string[] | null): Promise<void> {
+    return this.each("historyCommit", paths);
+  }
+  /** The window whose contents are `senderId` closed or reloaded. */
+  windowClosed(senderId: number): Promise<void> {
+    return this.each("windowClosed", senderId);
+  }
+  /** The base folder moved, changed or switched with the profile. */
+  folderChanged(): Promise<void> {
+    return this.each("folderChanged", undefined);
   }
   /** Task `taskId`'s context record changed: the core mods that listen (`ctx.app.tasks.onContextChanged`) hear it. */
   contextChanged(taskId: string): Promise<void> {

@@ -81,7 +81,9 @@ function parts() {
     history: {
       restorePoint: (sha) => (calls.push(["restorePoint", sha]), Promise.resolve({ ok: true })),
       restoreTask: (id, includeShared) => (calls.push(["restoreTask", id, includeShared]), Promise.resolve({ ok: false, reason: "cancelled" })),
+      restoreFile: rec("restoreFile", Promise.resolve({ ok: true })),
     },
+    documents: {} as never,
   };
   return { p, calls, session };
 }

@@ -2,6 +2,7 @@ import { type LoadedHarness, hasJobs } from "@humanharness/harness-sdk";
 import type { AppConfig, AppState, ConfiguredApp, TextSize } from "@humanharness/protocol";
 import { type ConfigStore, cleanJobs } from "./config";
 import type { FolderChangeDeps } from "./folder-change";
+import type { CoreEvents } from "./mods/core-events";
 import { saveWithFolderChange } from "./folder-change";
 import { cleanModels } from "./models";
 import { type HasNotice, requireNoticeForChoice } from "./notice-policy";
@@ -31,6 +32,7 @@ export interface SettingsIpcDeps {
   dropRuntime(): Promise<void>;
   saveConfigPatch(patch: AppConfig, before: AppConfig): Promise<void>;
   documentSessions: { closeAll(): void };
+  events: Pick<CoreEvents, "folderChanged">;
   dropDataStoresUnder(root: string): void;
   settleScopes(): Promise<void>;
   scopesChanged(): Promise<void>;
@@ -58,6 +60,7 @@ export function settingsIpc(d: SettingsIpcDeps) {
     dropRuntime,
     saveConfigPatch,
     documentSessions,
+    events,
     dropDataStoresUnder,
     settleScopes,
     scopesChanged,
@@ -104,6 +107,7 @@ export function settingsIpc(d: SettingsIpcDeps) {
         if (patch.folder !== undefined && patch.folder !== before.folder) {
           // The reader's watches were checked against the old folder.
           documentSessions.closeAll();
+          events.folderChanged();
           if (before.folder) dropDataStoresUnder(before.folder);
           await settleScopes()
             .then(scopesChanged)

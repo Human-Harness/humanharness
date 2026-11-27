@@ -159,6 +159,14 @@ export type GoBackChannel = (typeof GO_BACK_CHANNELS)[number];
  * failure as data.
  */
 export function goBackHandlers<S>(d: GoBackDeps<S>): Record<GoBackChannel, (sender: S, ...args: unknown[]) => Promise<unknown>> {
+  return createGoBacks(d).handlers;
+}
+
+/**
+ * The handlers, and the file go-back with a service of the caller's own (a core mod's, `ctx.app.history.restoreFile`):
+ * all of them under the one dialog lock.
+ */
+export function createGoBacks<S>(d: GoBackDeps<S>) {
   let open = false;
   const confirm = async (sender: S, ask: GoBackAsk): Promise<boolean> => {
     if (open) return false;
@@ -183,7 +191,22 @@ export function goBackHandlers<S>(d: GoBackDeps<S>): Record<GoBackChannel, (send
     const at = own?.entries.find((e) => e.sha === sha)?.date;
     return own && at ? laterTasks(groups, own.taskId, at) : null;
   };
-  return {
+  /** One file's go-back with `service`'s checks and write; every failure is answered as data. */
+  const file = (sender: S, name: unknown, commit: unknown, service: GoBackDeps<S>["file"]): Promise<FileRestoreAnswer> =>
+    Promise.resolve()
+      .then(async (): Promise<FileRestoreAnswer> => {
+        // The service's checks first (shape, tracked, on the timeline, not busy): a refused go-back asks nothing.
+        const asked = await service.restorePrompt(name, commit);
+        if (!asked.ok) return asked;
+        if (!(await confirm(sender, { kind: "file", prompt: asked.prompt }))) return CANCELLED;
+        // The service checks everything again: the folder may have changed while the dialog was open.
+        return service.restore(name, commit);
+      })
+      .catch((err: unknown) => {
+        console.error("A file go-back failed", err);
+        return { ok: false as const, reason: "failed" as const };
+      });
+  const handlers: Record<GoBackChannel, (sender: S, ...args: unknown[]) => Promise<unknown>> = {
     "restore": async (sender, sha): Promise<GoBackResult> => {
       if (!isSha(sha)) throw new Error("Invalid point");
       const later = pointIn(await d.groups(), sha);
@@ -210,19 +233,7 @@ export function goBackHandlers<S>(d: GoBackDeps<S>): Record<GoBackChannel, (send
       await d.restoreTask(taskId);
       return { ok: true };
     },
-    "hh:fileRestore": (sender, file, commit): Promise<FileRestoreAnswer> =>
-      Promise.resolve()
-        .then(async (): Promise<FileRestoreAnswer> => {
-          // The service's checks first (shape, tracked, on the timeline, not busy): a refused go-back asks nothing.
-          const asked = await d.file.restorePrompt(file, commit);
-          if (!asked.ok) return asked;
-          if (!(await confirm(sender, { kind: "file", prompt: asked.prompt }))) return CANCELLED;
-          // The service checks everything again: the folder may have changed while the dialog was open.
-          return d.file.restore(file, commit);
-        })
-        .catch((err: unknown) => {
-          console.error("A file go-back failed", err);
-          return { ok: false as const, reason: "failed" as const };
-        }),
+    "hh:fileRestore": (sender, name, commit) => file(sender, name, commit, d.file),
   };
+  return { handlers, file };
 }

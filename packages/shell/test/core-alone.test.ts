@@ -79,6 +79,21 @@ describe("the core alone (minimal-core 1a)", () => {
     expect(restored).toHaveBeenCalledWith(["a.md"]);
   });
 
+  it("a commit reaches a core mod as `historyCommit(paths)` too; a restore alone is no commit", () => {
+    const historyCommit = vi.fn(async () => {});
+    const sent: unknown[][] = [];
+    let onCommit: (c: { paths: string[] }) => void = () => {};
+    const history = { onCommit: (fn: typeof onCommit) => ((onCommit = fn), () => {}) };
+    const s = createAppServices(deps({ modHost: () => ({ refresh: async () => {}, historyCommit }), sendToWindow: (...a: unknown[]) => void sent.push(a) }));
+    s.announceCommits(history as never);
+    onCommit({ paths: ["a.md"] });
+    expect(historyCommit).toHaveBeenCalledWith(["a.md"]);
+    // The window's own push is as before.
+    expect(sent).toEqual([["hh:fileCommits", ["a.md"]]]);
+    s.afterRestore();
+    expect(historyCommit).toHaveBeenCalledTimes(1);
+  });
+
   it("without a mod store, the `sidekick` collection is no collection of the core's", async () => {
     const s = createAppServices(deps());
     await expect(s.personData({ op: "get", collection: "sidekick", key: "settings" }, { scope: "_app" })).rejects.toThrow(/no collection "sidekick"/);

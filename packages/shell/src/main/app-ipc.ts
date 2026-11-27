@@ -61,6 +61,7 @@ export function registerAppIpc(d: LifecycleDeps): void {
       dropRuntime: d.dropRuntime,
       saveConfigPatch: d.saveConfigPatch,
       documentSessions: d.documentSessions,
+      events: d.events,
       dropDataStoresUnder: d.dropDataStoresUnder,
       settleScopes: d.settleScopes,
       scopesChanged: d.scopesChanged,
@@ -162,7 +163,7 @@ export function registerAppIpc(d: LifecycleDeps): void {
   }
   d.handleAll(dataIpc({ harness: () => d.harness, scopesSettled: d.scopesSettled, harnessUiData: d.harnessUiData, currentHistory: d.currentHistory }));
   // The app channels a core mod answers (Sidekick's, sidekick spec §7): each call goes to the mod host.
-  registerModAppChannels(d.handle, () => d.appMods.state.modHost);
+  registerModAppChannels(d.handleFrom, () => d.appMods.state.modHost);
   // The layout the screen shows (minimal-core spec §5.2).
   d.handle("hh:layout", () => shownLayout(appHome(app.getPath("userData"), d.harness.id)));
   // The person's pick (0b2): written in the home folder's settings.json; the watcher redraws the window too.

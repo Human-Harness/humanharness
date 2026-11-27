@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from "vitest";
-import { drawMarks, findMark, findMarks, paintMarks, textRuns } from "../src/review-marks";
-import { expectFast } from "../../../test/support/timing";
+import { drawMarks, findMark, findMarks, paintMarks, textRuns } from "../src/ui/review-marks";
+import { expectFast } from "../../../../test/support/timing";
 
 function box(html: string) {
   const el = document.createElement("div");

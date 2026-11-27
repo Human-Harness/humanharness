@@ -16,10 +16,11 @@ afterEach(cleanup);
 const card = { path: "specs/a.md", title: "Filter", kind: "spec", change: "new" as const, words: 120 };
 const answer: ChatEntry = { id: "a1", role: "assistant", text: "I wrote the spec.", blocks: [], activities: [], at: "2026-10-28T10:00:00.000Z", engine: "claude", documents: [card] };
 
-async function chat(registry = documentsRegistry()) {
+async function chat(registry = documentsRegistry(), review = false) {
   const client = new FakeClient({ language: "en", folder: "/w", engineId: "claude" });
   client.chat = [answer];
   client.docTexts[card.path] = "## Scope\n";
+  if (review) client.state.review = true;
   await renderIn("en", withDocuments(<ChatView client={client} state={client.state} components={{}} stateBlocks={[]} />, registry), { theme: true });
   await screen.findByText("I wrote the spec.");
   return client;
@@ -107,5 +108,23 @@ describe("the documents mod's ui", () => {
     opened = await openCard();
     fireEvent.click(within(opened).getByRole("button", { name: /reading preferences/ }));
     expect(within(opened).getByRole("button", { name: "Serif" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("the reader's Focus asks the chat for quiet through the task view seam, and leaving it ends it", async () => {
+    const registry = documentsRegistry();
+    await chat(registry, true);
+    const opened = await openCard();
+    fireEvent.click(await within(opened).findByRole("button", { name: "Focus" }));
+    expect(registry.slot("quiet").map((q) => q.mod)).toEqual(["documents"]);
+    expect(document.querySelector(".hh-body.hh-focus")).not.toBeNull();
+    fireEvent.click(within(opened).getByRole("button", { name: "Leave focus" }));
+    expect(registry.slot("quiet")).toEqual([]);
+    expect(document.querySelector(".hh-focus")).toBeNull();
+  });
+
+  it("the review and focus pieces are the mod's: the core's ui no longer exports them", async () => {
+    const core = Object.keys(await import("../../../ui/src"));
+    for (const name of ["ReviewBar", "NO_BAR_DRAFT", "ReviewColumn", "FocusMarkers", "ApprovedDiff", "findMarks", "drawMarks", "clearMarks"])
+      expect(core).not.toContain(name);
   });
 });

@@ -6,7 +6,7 @@ function fake(over: Partial<ReleaseDeps> = {}) {
   const deps: ReleaseDeps = {
     readVersion: () => "0.2.0",
     writeVersion: (v) => void calls.push(`write ${v}`),
-    branch: () => "master",
+    branch: () => "main",
     isClean: () => true,
     commit: (m) => void calls.push(`commit ${m}`),
     tag: (t) => void calls.push(`tag ${t}`),
@@ -20,7 +20,7 @@ describe("release", () => {
     const { deps, calls } = fake();
     const out = release("0.3.0", deps);
     expect(calls).toEqual(["write 0.3.0", "commit chore(release): v0.3.0", "tag v0.3.0"]);
-    expect(out).toContain("origin master v0.3.0");
+    expect(out).toContain("origin main v0.3.0");
   });
 
   it.each(["", "1.2", "v1.2.3", "1.2.3-beta", "abc"])("refuses %j as a version", (v) => {
@@ -49,9 +49,9 @@ describe("release", () => {
     expect(calls).toEqual([]);
   });
 
-  it("refuses a branch other than master", () => {
+  it("refuses a branch other than main", () => {
     const { deps, calls } = fake({ branch: () => "feat/x" });
-    expect(() => release("0.3.0", deps)).toThrow(/master/);
+    expect(() => release("0.3.0", deps)).toThrow(/main/);
     expect(calls).toEqual([]);
   });
 });

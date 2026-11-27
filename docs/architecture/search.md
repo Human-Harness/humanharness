@@ -131,12 +131,12 @@ Reading (`read.ts`, `build.ts`):
   hit is indexed by name only (`skipped:secret-shaped`); notes and chats keep their text without those lines, and a
   private-key block is left out whole, BEGIN through END. A hit is never logged, nor where it was.
 - The `SecretStore` and the engines' account folders are outside the folder and never walked; the security test
-  (`packages/shell/test/search-security.test.ts`) proves a known key value never shows up in a snapshot, an answer or a
+  (`packages/mods/search/test/search-security.test.ts`) proves a known key value never shows up in a snapshot, an answer or a
   log.
 
 ## Budgets
 
-`HH_SEARCH_BUDGET=1 corepack pnpm vitest run packages/shell/test/search-budget.test.ts` measures §4.4 on 10,000
+`HH_SEARCH_BUDGET=1 corepack pnpm vitest run packages/mods/search/test/search-budget.test.ts` measures §4.4 on 10,000
 generated files (or `HH_SEARCH_BUDGET_DIR=<folder>`): the time to names and to ready, the query p95 (snippets
 included), the snapshot on disk against the indexed text, and main's heap. It is skipped otherwise: timing asserts
 would be flaky under the suite's load (plan deviation 19).

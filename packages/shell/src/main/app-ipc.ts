@@ -7,7 +7,7 @@ import { flushFileIndexes } from "@humanharness/workspace";
 import { languageHandlers } from "./language-ipc";
 import { chooseModeHandler } from "./mode-ipc";
 import { setPhaseHandler } from "./phase-ipc";
-import { fileHandlers, openPathIpc } from "./file-ipc";
+import { openPathIpc } from "./open-path-ipc";
 import { registerPluginsIpc } from "./plugin-ipc";
 import { jobsIpc } from "./jobs/jobs-host";
 import { linkedIpcDeps, registerLinkedIpc } from "./linked-ipc";
@@ -198,8 +198,6 @@ export function registerAppIpc(d: LifecycleDeps): void {
   d.handle("hh:setPhase", setPhaseHandler({ quitting: () => d.quitting, blocked: d.turnBlocked, setPhase: (to, task) => d.tasks.setPhase(to, task) }));
   d.handleAll(openPathIpc({ validConfig: d.validConfig, baseOf: d.baseOf, workReferences: d.workReferences, shell }));
   // Reviews (review spec §5.6): every answer is data; nothing reaches the service unless the agent may edit the folder (D0).
-  // File timelines (file-timeline spec §6.3): every harness (Q1); every answer is data.
-  d.handleAll(fileHandlers(d.fileTimelines));
   // Language on demand (plan 5b): every answer is data; the state is pushed on hh:language.
   if (d.translation) d.handleAll(languageHandlers(d.translation));
   // Cancels the turn and stops the task operation (a closing turn never goes on to the next task).
@@ -218,11 +216,9 @@ export function registerAppIpc(d: LifecycleDeps): void {
     afterRestore: d.afterRestore,
     restores: d.restores,
     undoByPaths: d.undoByPaths,
-    fileTimelines: d.fileTimelines,
   });
   d.historyRestores = restores;
   const history = historyIpc({ restores, homeHistory: () => d.appMods.state.homeHistory, linked_: d.linked_, linkedHistoriesOf: d.linkedHistoriesOf });
-  d.handleFrom("hh:fileRestore", history["hh:fileRestore"]);
   d.handle("hh:historyTasks", history["hh:historyTasks"]);
   d.handle("hh:homeHistory", history["hh:homeHistory"]);
   d.handle("hh:homeUndo", history["hh:homeUndo"]);

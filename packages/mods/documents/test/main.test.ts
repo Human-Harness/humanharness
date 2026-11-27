@@ -1,9 +1,10 @@
-// The documents mod's main: the app channels and pushes of the reader and of reviews, under the names the window already
-// calls, and the agent's side.
+// The documents mod's main: the app channels and pushes of the reader, reviews and the file timeline, under the names the
+// window already calls, and the agent's side.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { CoreMainCtx, CoreSender } from "@humanharness/mod-sdk/core";
+import { History } from "@humanharness/workspace";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import mod from "../src/main";
 
@@ -15,23 +16,42 @@ type Fn = (...args: unknown[]) => unknown;
 const SENDER: CoreSender = { id: 7 };
 
 /** Runs the mod's main on a fake core ctx; `folder` is what `ctx.app.documents.folder()` answers. */
-function run(folder: { base: string; roots(): Promise<string[]> } | null = { base: root, roots: async () => [root] }, canEdit = true) {
+function run(
+  folder: { base: string; roots(): Promise<string[]> } | null = { base: root, roots: async () => [root] },
+  canEdit = true,
+  parts: { documents?: Record<string, unknown>; history?: Record<string, unknown> } = {},
+) {
   const channels = new Map<string, Fn>();
   const hooks = new Map<string, Fn>();
   const pushed: [string, unknown][] = [];
   const hook = (name: string) => (fn: Fn) => (hooks.set(name, fn), () => void hooks.delete(name));
   mod.main!({
-    app: { documents: { folder: async () => folder, canEdit: () => canEdit, kinds: () => ({}), blocked: () => null, openTask: async () => null } },
+    app: {
+      documents: {
+        folder: async () => folder,
+        canEdit: () => canEdit,
+        kinds: () => ({}),
+        busy: () => false,
+        blocked: () => null,
+        openTask: async () => null,
+        history: async () => null,
+        actionLabel: () => "A question",
+        diffWorker: () => "/app/out/main/diff-worker.js",
+        ...parts.documents,
+      },
+      history: { ...parts.history },
+    },
     tasks: { running: async () => null },
     handle: (name: string, fn: Fn) => (channels.set(name, (_sender, ...args) => fn(...args)), () => {}),
     handleFrom: (name: string, fn: Fn) => (channels.set(name, fn), () => {}),
     push: (name: string, value: unknown) => void pushed.push([name, value]),
-    on: { instructions: hook("instructions"), agentTools: hook("agentTools"), windowClosed: hook("windowClosed"), folderChanged: hook("folderChanged"), dispose: hook("dispose") },
+    on: { instructions: hook("instructions"), agentTools: hook("agentTools"), historyCommit: hook("historyCommit"), windowClosed: hook("windowClosed"), folderChanged: hook("folderChanged"), dispose: hook("dispose") },
   } as unknown as CoreMainCtx<unknown> as never);
   const call = async (name: string, ...args: unknown[]) => channels.get(name)!(SENDER, ...args);
   return { channels, hooks, pushed, call };
 }
 
+const FILES = ["hh:fileDiff", "hh:fileRestore", "hh:fileTimeline"];
 const REVIEW = ["Answer", "Approve", "ApprovedText", "Comment", "EditDraft", "Reopen", "Send", "Summaries", "View"].map((name) => `hh:review${name}`);
 const OPTIONS = ["A", "B"].map((label) => ({ label, text: label }));
 const INFO = { canEdit: true, folder: root, documentKinds: {} };
@@ -42,9 +62,9 @@ describe("the documents mod's main", () => {
     expect(mod.id).toBe("documents");
   });
 
-  it("answers the reader's and the reviews' channels under their names", async () => {
+  it("answers the reader's, the reviews' and the file timeline's channels under their names", async () => {
     const m = run();
-    expect([...m.channels.keys()].sort()).toEqual(["hh:documentsExist", "hh:readDocument", "hh:readImage", ...REVIEW, "hh:unwatchDocument", "hh:watchDocument"]);
+    expect([...m.channels.keys()].sort()).toEqual(["hh:documentsExist", ...FILES, "hh:readDocument", "hh:readImage", ...REVIEW, "hh:unwatchDocument", "hh:watchDocument"]);
     expect(await m.call("hh:readDocument", "plan.md")).toMatchObject({ ok: true, text: "# Plan\n" });
     expect(await m.call("hh:readImage", "plan.md")).toBeNull();
     expect(await m.call("hh:documentsExist", ["plan.md", "no.md"])).toEqual([true, false]);
@@ -105,6 +125,79 @@ describe("the documents mod's main", () => {
     const m = run(undefined, false);
     expect(await m.call("hh:reviewView", "plan.md")).toEqual({ ok: false, reason: "not-ready" });
     expect(await m.call("hh:reviewSummaries", ["plan.md"])).toEqual([null]);
+  });
+
+  /** A folder with a history in which `a.md` has two versions; `first` is the older one's commit. */
+  async function versioned() {
+    const dir = fs.mkdtempSync(path.join(root, "v-"));
+    const work = path.join(dir, "work");
+    fs.mkdirSync(work);
+    const history = new History(work, path.join(dir, "history.git"), [".harness/"]);
+    await history.init();
+    await history.save("Start");
+    fs.writeFileSync(path.join(work, "a.md"), "one\n");
+    const first = (await history.save("Turn: write", { task: "t1", action: "spec" }))!;
+    fs.writeFileSync(path.join(work, "a.md"), "two\n");
+    await history.save("Turn: edit", { task: "t2", action: "spec" });
+    return { work, history, first };
+  }
+  const folderOf = (work: string) => ({ base: work, roots: async () => [work] });
+
+  it("the timeline and its diffs read the app's folder and history", async () => {
+    const { work, history, first } = await versioned();
+    const m = run(folderOf(work), true, { documents: { history: async () => history, actionLabel: () => "Spec writer" } });
+    expect(await m.call("hh:fileTimeline", "a.md")).toMatchObject({ ok: true, entries: [{ author: { label: "Spec writer" } }, { to: first }] });
+    expect(await m.call("hh:fileTimeline", "../a.md")).toEqual({ ok: false, reason: "outside" });
+    // The in-app diff runs in the worker the app names; there is none here, so a Markdown diff shows as plain lines.
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await m.call("hh:fileDiff", "a.md", first, "current")).toMatchObject({ ok: true, kind: "text", same: false });
+    vi.restoreAllMocks();
+  });
+
+  type Guard = (write: (h: History) => Promise<unknown>) => Promise<void>;
+  type RestoreService = { restorePrompt(f: unknown, c: unknown): Promise<unknown>; restore(f: unknown, c: unknown, guard: Guard): Promise<unknown> };
+
+  it.each([["busy", { busy: () => true }], ["blocked", { blocked: () => "The engine is changing" }]])("while the app is %s, the service refuses a go-back", async (_, held) => {
+    const { work, history, first } = await versioned();
+    const m = run(folderOf(work), true, {
+      documents: { history: async () => history, ...held },
+      history: { restoreFile: async (_s: unknown, file: unknown, commit: unknown, service: RestoreService) => service.restorePrompt(file, commit) },
+    });
+    expect(await m.call("hh:fileRestore", "a.md", first)).toEqual({ ok: false, reason: "busy" });
+  });
+
+  it("a go-back is the core's: it gets the asking window and the service, which writes through the core's guard only", async () => {
+    const { work, history, first } = await versioned();
+    const calls: unknown[][] = [];
+    let guarded = 0;
+    let yes = false;
+    const restoreFile = async (sender: unknown, file: unknown, commit: unknown, service: RestoreService) => {
+      calls.push([sender, file, commit]);
+      expect(await service.restorePrompt(file, commit)).toMatchObject({ ok: true, prompt: { path: "a.md" } });
+      if (!yes) return { ok: false, reason: "cancelled" };
+      return service.restore(file, commit, async (write) => {
+        guarded++;
+        await write(history);
+      });
+    };
+    const m = run(folderOf(work), true, { documents: { history: async () => history }, history: { restoreFile } });
+    expect(await m.call("hh:fileRestore", "a.md", first)).toEqual({ ok: false, reason: "cancelled" });
+    expect(fs.readFileSync(path.join(work, "a.md"), "utf8")).toBe("two\n");
+    yes = true;
+    expect(await m.call("hh:fileRestore", "a.md", first)).toEqual({ ok: true });
+    expect(fs.readFileSync(path.join(work, "a.md"), "utf8")).toBe("one\n");
+    expect(guarded).toBe(1);
+    expect(calls).toEqual([[SENDER, "a.md", first], [SENDER, "a.md", first]]);
+  });
+
+  it("pushes the paths of each commit, or null as the core says it", async () => {
+    const m = run();
+    await m.hooks.get("historyCommit")!(["a.md", "b.md"]);
+    await m.hooks.get("historyCommit")!(null);
+    expect(m.pushed).toEqual([
+      ["hh:fileCommits", ["a.md", "b.md"]],
+      ["hh:fileCommits", null],
+    ]);
   });
 
   it("without the app (a headless run) registers the agent's side alone, which works in the runtime's folder", async () => {

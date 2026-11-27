@@ -141,11 +141,14 @@ export interface GoBackDeps<S> {
   restorePoint(sha: string): Promise<void>;
   /** The folder back to before the task (index.ts: through the restore guard, which checks the task again). */
   restoreTask(taskId: string): Promise<void>;
-  /** The file timeline's own checks and go-back (FileTimelineService). */
-  file: {
-    restorePrompt(file: unknown, commit: unknown): Promise<FileRestorePromptResult>;
-    restore(file: unknown, commit: unknown): Promise<FileRestoreAnswer>;
-  };
+  /** The checks and go-back behind `hh:fileRestore`; without them it answers not-ready (a core mod brings its own). */
+  file?: GoBackFile;
+}
+
+/** One file go-back's own checks and write (the documents mod's file timeline). */
+export interface GoBackFile {
+  restorePrompt(file: unknown, commit: unknown): Promise<FileRestorePromptResult>;
+  restore(file: unknown, commit: unknown): Promise<FileRestoreAnswer>;
 }
 
 export const GO_BACK_CHANNELS = ["restore", "restoreTask", "hh:fileRestore"] as const satisfies readonly (InvokeChannel | "restore" | "restoreTask")[];
@@ -192,7 +195,7 @@ export function createGoBacks<S>(d: GoBackDeps<S>) {
     return own && at ? laterTasks(groups, own.taskId, at) : null;
   };
   /** One file's go-back with `service`'s checks and write; every failure is answered as data. */
-  const file = (sender: S, name: unknown, commit: unknown, service: GoBackDeps<S>["file"]): Promise<FileRestoreAnswer> =>
+  const file = (sender: S, name: unknown, commit: unknown, service: GoBackFile): Promise<FileRestoreAnswer> =>
     Promise.resolve()
       .then(async (): Promise<FileRestoreAnswer> => {
         // The service's checks first (shape, tracked, on the timeline, not busy): a refused go-back asks nothing.
@@ -233,7 +236,7 @@ export function createGoBacks<S>(d: GoBackDeps<S>) {
       await d.restoreTask(taskId);
       return { ok: true };
     },
-    "hh:fileRestore": (sender, name, commit) => file(sender, name, commit, d.file),
+    "hh:fileRestore": async (sender, name, commit) => (d.file ? file(sender, name, commit, d.file) : { ok: false, reason: "not-ready" }),
   };
   return { handlers, file };
 }

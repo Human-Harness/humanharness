@@ -7,12 +7,12 @@ const root = path.resolve(__dirname, "../..");
 
 /** The window's go-backs left the core (minimal-core step 2): they are the History mod's main, through `ctx.app.history`. */
 describe("the History go-backs are not core channels", () => {
-  it("historyIpc has no restore channel, and the file go-back and the rows stay", () => {
+  it("historyIpc has no restore channel (the file go-back is the documents mod's), and the rows stay", () => {
     const ipc = historyIpc({ restores: {} as never, homeHistory: () => null, linked_: () => null, linkedHistoriesOf: async () => [] });
     const names = Object.keys(ipc).sort();
     expect(names).not.toContain("hh:restore");
     expect(names).not.toContain("hh:restoreTask");
-    expect(names).toEqual(["hh:fileRestore", "hh:historyTasks", "hh:homeHistory", "hh:homeUndo"]);
+    expect(names).toEqual(["hh:historyTasks", "hh:homeHistory", "hh:homeUndo"]);
   });
 
   it("neither the protocol, the client, the preload, the registrations nor the ui name them", async () => {

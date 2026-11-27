@@ -14,8 +14,6 @@
   "hh:engineStatus",
   "hh:event",
   "hh:extendTimeBox",
-  "hh:fileDiff",
-  "hh:fileTimeline",
   "hh:finishTask",
   "hh:getSetup",
   "hh:getState",

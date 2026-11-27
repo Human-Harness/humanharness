@@ -481,6 +481,9 @@ importers:
 
   packages/mods/documents:
     dependencies:
+      '@humanharness/blocks':
+        specifier: workspace:*
+        version: link:../../blocks
       '@humanharness/harness-sdk':
         specifier: workspace:*
         version: link:../../harness-sdk
@@ -493,6 +496,22 @@ importers:
       '@humanharness/workspace':
         specifier: workspace:*
         version: link:../../workspace
+      diff:
+        specifier: ^9.0.0
+        version: 9.0.0
+      remark-gfm:
+        specifier: ^4.0.1
+        version: 4.0.1(supports-color@7.2.0)
+      remark-parse:
+        specifier: ^11.0.0
+        version: 11.0.0(supports-color@7.2.0)
+      unified:
+        specifier: ^11.0.5
+        version: 11.0.5
+    devDependencies:
+      '@types/mdast':
+        specifier: ^4.0.4
+        version: 4.0.4
 
   packages/mods/history-view:
     dependencies:
@@ -850,6 +869,9 @@ importers:
       '@humanharness/workspace':
         specifier: workspace:*
         version: link:../workspace
+      diff:
+        specifier: ^9.0.0
+        version: 9.0.0
       electron-updater:
         specifier: 6.8.11
         version: 6.8.11(supports-color@7.2.0)
@@ -859,6 +881,15 @@ importers:
       pdfjs-dist:
         specifier: ^6.4.299
         version: 6.4.299
+      remark-gfm:
+        specifier: ^4.0.1
+        version: 4.0.1(supports-color@7.2.0)
+      remark-parse:
+        specifier: ^11.0.0
+        version: 11.0.0(supports-color@7.2.0)
+      unified:
+        specifier: ^11.0.5
+        version: 11.0.5
       zod:
         specifier: ^4.6.5
         version: 4.6.5
@@ -969,28 +1000,12 @@ importers:
       '@humanharness/harness-sdk':
         specifier: workspace:*
         version: link:../harness-sdk
-      diff:
-        specifier: ^9.0.0
-        version: 9.0.0
       isomorphic-git:
         specifier: ^1.43.3
         version: 1.43.3
-      remark-gfm:
-        specifier: ^4.0.1
-        version: 4.0.1(supports-color@7.2.0)
-      remark-parse:
-        specifier: ^11.0.0
-        version: 11.0.0(supports-color@7.2.0)
-      unified:
-        specifier: ^11.0.5
-        version: 11.0.5
       zod:
         specifier: ^4.6.5
         version: 4.6.5
-    devDependencies:
-      '@types/mdast':
-        specifier: ^4.0.4
-        version: 4.0.4
 
 packages:
 

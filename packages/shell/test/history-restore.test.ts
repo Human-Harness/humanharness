@@ -41,7 +41,6 @@ function setup(over: Partial<HistoryRestoreDeps> = {}) {
     afterRestore: vi.fn(),
     restores: { run: async (find, fn) => void (await fn((await find())!)) },
     undoByPaths: () => null,
-    fileTimelines: {} as never,
     ...over,
   };
   return { svc: historyRestores(d), d, history, window, asked, say: (v: boolean) => void (answer = v) };

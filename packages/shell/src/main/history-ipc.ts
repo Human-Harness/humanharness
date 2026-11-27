@@ -1,4 +1,3 @@
-import type { WebContents } from "electron";
 import { historyView } from "./history-view";
 import type { HistoryRestores } from "./history-restore";
 import { type LinkedHistoryRef, linkedOnlyRows } from "./linked-restore";
@@ -14,12 +13,10 @@ export interface HistoryIpcDeps {
   linkedHistoriesOf(scopeId: string | undefined): Promise<LinkedHistoryRef[]>;
 }
 
-/** The History panel's rows, its go-back channels as one-line wrappers of the restore service, and the home folder's history (0b2). */
+/** The History panel's rows and the home folder's history (0b2). The go-backs are core mods' (`ctx.app.history`). */
 export function historyIpc(d: HistoryIpcDeps) {
   const { linked_, linkedHistoriesOf, restores } = d;
   return {
-    // The whole-folder and task go-backs are the History mod's main (`ctx.app.history`); the file's asks on the window that asked.
-    "hh:fileRestore": (sender: WebContents, file: unknown, commit: unknown) => restores.fileRestore(sender, file, commit),
     // The panel's rows; with tracked linked folders, a task that changed only one of them too (hatches spec §3.4), so it
     // can be undone. Without linked folders, exactly the work folder's (D0); a linked folder that can't be read adds none.
     "hh:historyTasks": async () => {

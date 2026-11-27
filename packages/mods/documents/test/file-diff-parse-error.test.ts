@@ -9,7 +9,7 @@ vi.mock("remark-parse", () => ({
   },
 }));
 
-const { diffFile, diffMarkdown } = await import("../src/file-diff");
+const { diffFile, diffMarkdown } = await import("../src/main/file-diff");
 const side = (text: string) => ({ kind: "bytes" as const, bytes: Buffer.from(text), size: Buffer.byteLength(text) });
 
 describe("a parser throw (file-timeline spec §4.2)", () => {

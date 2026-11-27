@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { announcedPaths, commitAnnouncer, MAX_ANNOUNCED_PATHS } from "../src/main/file-ipc";
+import { announcedPaths, commitAnnouncer, MAX_ANNOUNCED_PATHS } from "../src/main/commit-announcer";
 import { fileCommitListeners } from "../src/preload/file-commits";
 
 describe("hh:fileCommits (file-timeline spec §6: a commit tells the window which files changed)", () => {

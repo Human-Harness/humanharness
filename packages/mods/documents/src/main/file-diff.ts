@@ -4,6 +4,7 @@ import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
 import { CALLOUTS, splitFrontMatter } from "@humanharness/harness-sdk/documents";
+import { type DiffPart, type FileDiffView, type LineChange, type MdBlockType, type MdDiffBlock, extensionOf, isBinary } from "@humanharness/workspace";
 
 /** Each side of a diff is cut to this many bytes (file-timeline spec §4.2 "Large files"). */
 export const MAX_DIFF_BYTES = 200 * 1024;
@@ -31,32 +32,9 @@ const MAX_DELIMITER_COST = 4_000_000;
 const MAX_SETEXT = 1000;
 /** How deep `plain` follows a node's children. */
 const MAX_PLAIN_DEPTH = 64;
-/** Bytes looked at for a NUL. */
-const SNIFF_BYTES = 8 * 1024;
-const BINARY_EXTENSIONS = new Set([
-  "png", "jpg", "jpeg", "gif", "webp", "heic", "ico", "bmp", "tif", "tiff", "psd",
-  "mp3", "wav", "m4a", "aac", "flac", "ogg", "mp4", "mov", "m4v", "avi", "mkv", "webm",
-  "zip", "gz", "tgz", "bz2", "xz", "7z", "rar", "tar", "dmg", "pdf",
-  "doc", "docx", "xls", "xlsx", "ppt", "pptx", "key", "numbers", "pages", "odt", "ods", "odp",
-  "woff", "woff2", "ttf", "otf", "eot", "sqlite", "db", "bin", "exe", "dll", "so", "dylib", "class", "jar", "wasm",
-]);
 
-export type DiffPart = { kind: "same" | "ins" | "del"; text: string };
-/**
- * One line of a line diff; `old`/`new` are 1-based line numbers on each side. A `gap` stands for `count` unchanged lines
- * left out (its `text` is empty): a whole file's line diff keeps only the lines around its changes.
- */
-export interface LineChange {
-  kind: "same" | "ins" | "del" | "gap";
-  text: string;
-  old?: number;
-  new?: number;
-  count?: number;
-}
 /** One side of a diff: the file's bytes (with its full size), or no file. */
 export type DiffSide = { kind: "absent" } | { kind: "bytes"; bytes: Uint8Array; size: number };
-
-export type MdBlockType = "frontMatter" | "heading" | "paragraph" | "listItem" | "tableRow" | "code" | "mermaid" | "callout" | "quote" | "other";
 
 /** A top-level block of a Markdown text: its exact source, its plain text, and for rows their cells' text. */
 export interface MdBlock {
@@ -65,38 +43,6 @@ export interface MdBlock {
   text: string;
   depth?: number;
   cells?: string[];
-}
-
-/** A block of a Markdown diff. `before`/`after`: the block's source on each side; an unchanged block has `after` only. */
-export interface MdDiffBlock {
-  type: MdBlockType;
-  status: "same" | "added" | "removed" | "changed";
-  before?: string;
-  after?: string;
-  /** A changed heading, paragraph, list item, callout, quote or other block: its plain text, word by word. */
-  parts?: DiffPart[];
-  /** A changed code, Mermaid or front-matter block: its lines. */
-  lines?: LineChange[];
-  /** A table row: its cells on each side, and word parts per cell when it changed. */
-  cells?: { before?: string[]; after?: string[]; parts?: DiffPart[][] };
-  depth?: number;
-}
-
-export type FileDiffView =
-  | { ok: true; kind: "markdown"; same: boolean; truncated: boolean; blocks: MdDiffBlock[]; source: LineChange[] }
-  | { ok: true; kind: "text"; same: boolean; truncated: boolean; lines: LineChange[]; lang: string | null }
-  | { ok: true; kind: "binary"; same: boolean; sizes: { before: number | null; after: number | null } };
-
-/** The lower-case extension of `file` (no dot), or "". */
-export function extensionOf(file: string): string {
-  const name = file.slice(file.lastIndexOf("/") + 1);
-  const dot = name.lastIndexOf(".");
-  return dot <= 0 ? "" : name.slice(dot + 1).toLowerCase();
-}
-
-export function isBinary(file: string, bytes: Uint8Array): boolean {
-  if (BINARY_EXTENSIONS.has(extensionOf(file))) return true;
-  return bytes.subarray(0, SNIFF_BYTES).includes(0);
 }
 
 /** The first `max` bytes of `bytes`, backed up to the start of a UTF-8 character. */

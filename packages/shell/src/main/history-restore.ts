@@ -1,8 +1,7 @@
 import { type FileRestoreAnswer, RESTORE_POINT, RESTORE_TASK } from "@humanharness/protocol";
 import type { History } from "@humanharness/workspace";
 import type { WebContents } from "electron";
-import type { FileTimelineService } from "./file-timeline";
-import { CANCELLED, type GoBackAsk, type GoBackDeps, createGoBacks } from "./go-back";
+import { CANCELLED, type GoBackAsk, type GoBackFile, createGoBacks } from "./go-back";
 import { historyView } from "./history-view";
 import { type LinkedHistoryRef, mergeTaskGroups, restoreLinkedTask, restoreTaskWithLinked } from "./linked-restore";
 import type { RestoreGuard } from "./restore-guard";
@@ -32,11 +31,10 @@ export interface HistoryRestoreDeps {
     linkedRunning: (realPath: string) => Promise<{ task: string; paths: ReadonlySet<string> }[]>;
     busy: (id: string) => boolean;
   } | null;
-  fileTimelines: FileTimelineService;
 }
 
 /** A core mod's file go-back: its own checks, and a write that gets the restore guard only after the person's yes. */
-export type FileRestoreService = Pick<GoBackDeps<unknown>["file"], "restorePrompt"> & {
+export type FileRestoreService = Pick<GoBackFile, "restorePrompt"> & {
   restore(file: unknown, commit: unknown, guard: HistoryRestoreDeps["restoreWith"]): Promise<FileRestoreAnswer>;
 };
 
@@ -47,7 +45,7 @@ export type FileRestoreService = Pick<GoBackDeps<unknown>["file"], "restorePromp
  * `{ ok: false, reason: "cancelled" }` or, by paths, `{ refused }`; a blocked or invalid call throws, as before.
  */
 export function historyRestores(d: HistoryRestoreDeps) {
-  const { linked_, currentHistory, linkedHistoriesOf, confirmGoBack, restoreWith, afterRestore, restores, undoByPaths, fileTimelines } = d;
+  const { linked_, currentHistory, linkedHistoriesOf, confirmGoBack, restoreWith, afterRestore, restores, undoByPaths } = d;
   const historyGroups = async () => {
     const history = await currentHistory();
     return history ? historyView(await history.tasks()) : [];
@@ -100,7 +98,6 @@ export function historyRestores(d: HistoryRestoreDeps) {
         throw err;
       });
     },
-    file: fileTimelines,
   });
 
   return {
@@ -145,8 +142,6 @@ export function historyRestores(d: HistoryRestoreDeps) {
       afterRestore();
       return { ok: true };
     },
-    /** One file's go-back (the file timeline): asks on `sender`'s window, as before. */
-    fileRestore: goBacks["hh:fileRestore"],
     /**
      * One file's go-back through a core mod's `service`, asked on `sender`'s window under the same dialog lock. Only
      * after a yes does `service.restore` run, with the restore guard, which refuses once that call ended.

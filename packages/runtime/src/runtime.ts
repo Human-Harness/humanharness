@@ -32,12 +32,14 @@ export interface RuntimeOptions {
    * The caller's parts of AGENTS.md, after the core's own (each is its lines, led by a blank one), asked when the runtime
    * starts and on every `refreshInstructions`. Absent: none (D0).
    */
-  instructions?: () => string[][];
+  instructions?: () => string[][] | Promise<string[][]>;
   /**
    * The caller's tools on the `ui` server of task and job slots (a job never gets the `tasksOnly` ones), all answered by
-   * its one handler over one channel. Absent, or no definitions: no tools and no channel (D0).
+   * its one handler over one channel. A value is each slot's from its opening; a function is asked in the first turn of
+   * each engine session (a new slot's, and the one after `endSession`), so a slot that stays open gets the tools as
+   * they are then. Absent, or no definitions: no tools and no channel (D0).
    */
-  agentTools?: AgentToolSet;
+  agentTools?: AgentToolSet | (() => AgentToolSet | undefined | Promise<AgentToolSet | undefined>);
   /**
    * The core `tools` MCP server (tools spec §5) for task and job slots: `catalogue` lists the agent's tools, `request`
    * runs a call for the asking slot (`createRuntime`'s is `"main"`). The app passes it only when the harness has an

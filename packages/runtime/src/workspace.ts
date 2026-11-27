@@ -179,8 +179,8 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
   const material = opts.material && hasMaterial(harness) ? opts.material : undefined;
   const withMaterial = material ? { material: true } : {};
   const tools = opts.tools && hasTools(harness) ? opts.tools : undefined;
-  const sectionsNow = () => (opts.instructions ? { sections: opts.instructions() } : {});
-  const generated = await writeInstructions({ folder, base, language: opts.language, blocks, references, engine, ...sectionsNow(), ...(settings ? { settings } : {}), ...(linked.length ? { linked } : {}), ...subagents, ...withMaterial });
+  const sectionsNow = async () => (opts.instructions ? { sections: await opts.instructions() } : {});
+  const generated = await writeInstructions({ folder, base, language: opts.language, blocks, references, engine, ...(await sectionsNow()), ...(settings ? { settings } : {}), ...(linked.length ? { linked } : {}), ...subagents, ...withMaterial });
 
   // The history skips the app's files under .harness/ (except the notes, the data and, with material, its registry
   // and decisions) and the generated instructions.
@@ -255,12 +255,20 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
     const ref: SlotRef = { key: o.key };
     const session: Session = o.session ?? { id: randomUUID(), started: false };
     let emitCurrent: ((e: Event) => void) | null = null;
+    // The caller's tools: a value is this slot's from the start; a function is asked as each engine session starts.
+    const askTools = !step && typeof opts.agentTools === "function" ? opts.agentTools : undefined;
+    const fixed = step || typeof opts.agentTools === "function" ? undefined : opts.agentTools;
+    // The caller's tools this slot gets: a task's, all of them; a job's, those that are not `tasksOnly`; a step's, none.
+    const offeredOf = (s: AgentToolSet | undefined) => s?.definitions.filter((d) => !(o.kind === "job" && d.tasksOnly)) ?? [];
+    const handlerOf = (s: AgentToolSet) => offeredHandler(s, new Set(offeredOf(s).map((d) => d.name)));
+    /** The tools the engine was told of, and what answers them. */
+    let offered = offeredOf(fixed);
+    let answer = fixed ? handlerOf(fixed) : undefined;
+    const openAgentRpc = () => openRpc((r) => answer!(r));
     const bridge: Bridge = await openBridge((m) => emitCurrent?.({ type: "block", name: m.name, data: m.data }));
     let rpc: Rpc | null = null;
     let materialRpc: Rpc | null = null;
     let agentRpc: Rpc | null = null;
-    // The caller's tools this slot gets: a task's, all of them; a job's, those that are not `tasksOnly`; a step's, none.
-    const offered = step ? [] : (opts.agentTools?.definitions.filter((d) => !(o.kind === "job" && d.tasksOnly)) ?? []);
     let toolsRpc: Rpc | null = null;
     try {
       const data = opts.data;
@@ -268,7 +276,7 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
       if (!step && material) materialRpc = await openRpc((r) => material.request(r, ref));
       // Task and job slots alike (Decision 9): a job's agent may call the tools too.
       if (!step && tools) toolsRpc = await openRpc((r) => tools.request(r, ref));
-      if (opts.agentTools && offered.length > 0) agentRpc = await openRpc(offeredHandler(opts.agentTools, new Set(offered.map((d) => d.name))));
+      if (offered.length > 0) agentRpc = await openAgentRpc();
     } catch (err) {
       await toolsRpc?.close().catch(() => {});
       await agentRpc?.close().catch(() => {});
@@ -313,18 +321,22 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
       : harness.permissions;
     // A task or job slot clears HH_STEP so an outer one can't make it a step slot; only with a recipe declared (D0).
     const noStep: Record<string, string> = hasRecipes(harness) ? { HH_STEP: "" } : {};
-    const ui = uiServerSpec({ harnessConfig: harness.configPath, bridge, launcher, entry: opts.uiServerEntry, ...(agentRpc ? { tools: { definitions: offered, rpc: agentRpc } } : {}) });
+    /** The `ui` server as it is with the tools offered now. */
+    const uiSpec = () => {
+      const ui = uiServerSpec({ harnessConfig: harness.configPath, bridge, launcher, entry: opts.uiServerEntry, ...(agentRpc ? { tools: { definitions: offered, rpc: agentRpc } } : {}) });
+      // The engine hands its own env to MCP servers: a task slot clears HH_JOB so an outer one can't make it a job.
+      // Only with jobs declared: without them the spec is today's (D0).
+      return step ? { ...ui, env: { ...ui.env, HH_STEP: o.job as string, HH_JOB: "" } }
+        : o.kind === "job" ? { ...ui, env: { ...ui.env, HH_JOB: "1", ...noStep } }
+        : hasJobs(harness) ? { ...ui, env: { ...ui.env, HH_JOB: "", ...noStep } }
+        : ui;
+    };
     const transportOptions: CommonOptions = {
       folder: stepFolder ?? folder,
       session,
       ...(o.lastContextUsed !== undefined ? { lastContextUsed: o.lastContextUsed } : {}),
       mcp: [
-        // The engine hands its own env to MCP servers: a task slot clears HH_JOB so an outer one can't make it a job.
-        // Only with jobs declared: without them the spec is today's (D0).
-        step ? { ...ui, env: { ...ui.env, HH_STEP: o.job as string, HH_JOB: "" } }
-        : o.kind === "job" ? { ...ui, env: { ...ui.env, HH_JOB: "1", ...noStep } }
-        : hasJobs(harness) ? { ...ui, env: { ...ui.env, HH_JOB: "", ...noStep } }
-        : ui,
+        uiSpec(),
         ...(rpc ? [dataServerSpec({ harnessConfig: harness.configPath, rpc, launcher, entry: opts.dataServerEntry, ...(opts.extraData ? { extra: opts.extraData.catalogue } : {}) })] : []),
         ...(toolsRpc && tools ? [toolsServerSpec({ catalogue: tools.catalogue, rpc: toolsRpc, launcher, entry: tools.entry })] : []),
         ...(materialRpc ? [materialServerSpec({ rpc: materialRpc, launcher, mode: "person", entry: material?.entry })] : []),
@@ -347,7 +359,36 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
         }
       },
     };
-    const transport: Transport = engines.createTransport(engine, transportOptions);
+    // A copy each: a transport keeps the session in its options.
+    let transport: Transport = engines.createTransport(engine, { ...transportOptions });
+
+    /** The next turn is the first of an engine session, and the caller gives its tools by a function. */
+    let toolsDue = askTools !== undefined;
+    /** `endSession` ran: the slot's own `session` is no longer the one the transport would continue. */
+    let ended = false;
+
+    /**
+     * Asks the caller's tools for the session that starts now (a slot that stays open across tasks starts many). An
+     * engine takes its MCP servers as a session starts, so another list goes on a new transport; the same list keeps it.
+     */
+    async function renewTools(): Promise<void> {
+      const set = await askTools!();
+      const next = offeredOf(set);
+      if (set) answer = handlerOf(set);
+      if (JSON.stringify(next) === JSON.stringify(offered)) return;
+      if (next.length > 0) agentRpc ??= await openAgentRpc();
+      else {
+        await agentRpc?.close();
+        agentRpc = null;
+      }
+      await transport.close();
+      offered = next;
+      transport = engines.createTransport(engine, {
+        ...transportOptions,
+        session: ended ? { id: randomUUID(), started: false } : session,
+        mcp: [uiSpec(), ...transportOptions.mcp.slice(1)],
+      });
+    }
 
     let busy = false;
     let current: { controller: AbortController; done: Promise<void> } | null = null;
@@ -439,6 +480,11 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
             w = win;
             // The same windows and trailer in each tracked linked folder, after the main folder's.
             for (const repo of repos) linkedWindows.push({ repo, w: await beginTurn(repo.history, repo.ledger, o.key, options.trailer) });
+            // After the windows: a turn counts as running from `send` on.
+            if (toolsDue) {
+              await renewTools();
+              toolsDue = false;
+            }
             let final: Event | undefined;
             emitCurrent = emitOnce;
             await transport.turn(
@@ -527,6 +573,8 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
         busy = true;
         try {
           await transport.endSession();
+          ended = true;
+          toolsDue = askTools !== undefined;
         } finally {
           busy = false;
         }
@@ -579,7 +627,9 @@ export async function createWorkspace(opts: WorkspaceOptions): Promise<HarnessWo
         if (ledger.anyRunning()) return false;
         const nowSubagents = await subagentsNow();
         if (ledger.anyRunning()) return false;
-        const write = refreshInstructions({ folder, base, language: opts.language, blocks, references, ...sectionsNow(), ...(now ? { settings: now } : {}), ...(nowLinked.length ? { linked: nowLinked } : {}), ...nowSubagents, ...withMaterial });
+        const nowSections = await sectionsNow();
+        if (ledger.anyRunning()) return false;
+        const write = refreshInstructions({ folder, base, language: opts.language, blocks, references, ...nowSections, ...(now ? { settings: now } : {}), ...(nowLinked.length ? { linked: nowLinked } : {}), ...nowSubagents, ...withMaterial });
         writing = write;
         try {
           return await write;

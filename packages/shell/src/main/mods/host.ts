@@ -1,9 +1,10 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import type { DailyInfo, Disposer, HoldVerdict, MainCtx, ModDefinition, PhaseMovedInfo, SendInfo, SendVerdict, TaskRef, TurnEndInfo } from "@humanharness/mod-sdk";
+import type { AgentInfo, AgentTool, DailyInfo, Disposer, HoldVerdict, MainCtx, ModDefinition, PhaseMovedInfo, SendInfo, SendVerdict, TaskRef, TurnEndInfo } from "@humanharness/mod-sdk";
 import type { CoreApp, CoreMainCtx, FirstMessageSection } from "@humanharness/mod-sdk/core";
 import type { ModRow } from "@humanharness/protocol";
 import type { PushChannel } from "@humanharness/protocol/channels";
+import { isLines, modOff, modReloaded, readAgentTools } from "./agent-answers";
 import { type ModsSettings, isModOn } from "./config";
 import { coreModOn } from "./core-mods";
 import { guarded } from "./guard";
@@ -16,8 +17,8 @@ export const BEFORE_SEND_MS = 6_000;
 export const HOOK_MS = 5_000;
 export const STRIKES = 3;
 
-type HookName = "beforeSend" | "turnStart" | "turnEnd" | "taskOpen" | "taskClose" | "betweenTasks" | "phaseMoved" | "daily" | "close" | "refresh" | "firstMessage" | "contextChanged" | "dataChanged" | "restored" | "baseGone";
-const HOOKS: readonly HookName[] = ["beforeSend", "turnStart", "turnEnd", "taskOpen", "taskClose", "betweenTasks", "phaseMoved", "daily", "close"];
+type HookName = "beforeSend" | "turnStart" | "turnEnd" | "taskOpen" | "taskClose" | "betweenTasks" | "phaseMoved" | "daily" | "close" | "instructions" | "agentTools" | "refresh" | "firstMessage" | "contextChanged" | "dataChanged" | "restored" | "baseGone";
+const HOOKS: readonly HookName[] = ["beforeSend", "turnStart", "turnEnd", "taskOpen", "taskClose", "betweenTasks", "phaseMoved", "daily", "close", "instructions", "agentTools"];
 /** A local calendar day, YYYY-MM-DD. */
 export const localDay = (d: Date): string => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 /** Milliseconds from `now` to the next local midnight. */
@@ -459,6 +460,58 @@ export class ModHost {
     }
     return texts.length > 0 || items.length > 0 || excluded.size > 0 ? { text: texts.join("\n\n"), items, excluded } : null;
   }
+  /**
+   * One section per `instructions()` hook that answers lines, in mod order, each led by a blank line as the app's own
+   * are. A throw, a timeout or another shape adds nothing and is a strike.
+   */
+  async instructions(o: AgentInfo): Promise<string[][]> {
+    const sections: string[][] = [];
+    for (const [r, fn] of this.listeners("instructions")) {
+      if (!r.on) continue;
+      const res = await guarded(() => (fn as (o: AgentInfo) => unknown)({ ...o }), this.hookMs);
+      const lines = res.ok && isLines(res.value) ? res.value : null;
+      await this.count(r, lines !== null, res.ok ? "instructions() must return a list of lines" : res.reason);
+      if (lines && lines.length > 0) sections.push(lines[0] === "" ? [...lines] : ["", ...lines]);
+    }
+    return sections;
+  }
+  /**
+   * The mods' `agentTools()`, in mod order, none under a `taken` name or an earlier mod's. A throw or a timeout adds
+   * nothing; a tool the `ui` server can't take is left out; each is a strike, and a mod it turns off adds nothing.
+   */
+  async agentTools(o: AgentInfo, taken: Iterable<string>): Promise<(AgentTool & { mod: string })[]> {
+    const names = new Set(taken);
+    const tools: (AgentTool & { mod: string })[] = [];
+    for (const [r, fn] of this.listeners("agentTools")) {
+      if (!r.on) continue;
+      const res = await guarded(async () => readAgentTools(await (fn as (o: AgentInfo) => unknown)({ ...o }), names), this.hookMs);
+      const problem = res.ok ? res.value.problem : res.reason;
+      await this.count(r, problem === undefined, problem);
+      if (!res.ok || !r.on) continue;
+      for (const tool of res.value.tools) {
+        names.add(tool.name);
+        const { name, description, inputSchema, tasksOnly, timeoutError } = tool;
+        const extra = { ...(tasksOnly !== undefined ? { tasksOnly } : {}), ...(timeoutError !== undefined ? { timeoutError } : {}) };
+        tools.push({ mod: r.mod.json.id, name, description, inputSchema, ...extra, handle: (args) => this.toolCall(r, fn, tool, args) });
+      }
+    }
+    return tools;
+  }
+  /**
+   * The agent's call of a mod's tool. As `call`: a core mod's may take as long as it needs and its throw reaches the
+   * agent as it is; any other's is guarded, and a throw or a timeout is a strike.
+   */
+  private async toolCall(r: Running, hook: Fn, tool: AgentTool, args: Record<string, unknown>): Promise<unknown> {
+    // The mod went off, or was loaded again, after the agent's session was opened with this tool.
+    if (!r.on) throw modOff(r.mod.json.id);
+    if (!r.hooks.get("agentTools")?.has(hook)) throw modReloaded(r.mod.json.id);
+    if (r.mod.shipped === "core") return tool.handle(args);
+    const res = await guarded(() => tool.handle(args), this.hookMs);
+    await this.count(r, res.ok, res.ok ? undefined : res.reason);
+    if (!res.ok) throw new Error(res.reason);
+    return res.value;
+  }
+
   taskOpen(task: TaskRef): Promise<void> {
     return this.each("taskOpen", task);
   }

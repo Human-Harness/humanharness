@@ -526,6 +526,7 @@ const { prepareEngine, runtimeOptions, runtime, closeRuntime, dropRuntime, undoB
     plainTasks: () => plainTasks,
     historyHeld: () => historyHeld,
     resolvedMods: () => appMods.state.resolvedMods,
+    modHost: () => appMods.state.modHost,
     pluginLog,
     dataStoreFor,
     materialRequest: (base, request, runningTask) => materialRequest(base, request, runningTask),

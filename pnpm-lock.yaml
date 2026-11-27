@@ -479,6 +479,21 @@ importers:
         specifier: ^19.3.0
         version: 19.3.0(react@19.3.0)
 
+  packages/mods/documents:
+    dependencies:
+      '@humanharness/harness-sdk':
+        specifier: workspace:*
+        version: link:../../harness-sdk
+      '@humanharness/mod-sdk':
+        specifier: workspace:*
+        version: link:../../mod-sdk
+      '@humanharness/protocol':
+        specifier: workspace:*
+        version: link:../../protocol
+      '@humanharness/workspace':
+        specifier: workspace:*
+        version: link:../../workspace
+
   packages/mods/history-view:
     dependencies:
       '@humanharness/harness-sdk':

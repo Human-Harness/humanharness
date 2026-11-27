@@ -37,7 +37,6 @@ export interface FolderIpcDeps {
   folderBusy(): boolean;
   plainTasks: { checkpointBeforeMove(): Promise<void> };
   restores: { settled(): Promise<unknown> };
-  documentSessions: { closeAll(): void };
   events: Pick<CoreEvents, "baseGone" | "folderChanged">;
   validConfig(): Promise<ConfiguredApp | null>;
   baseOf(c: { folder: string; profile?: string }): string;
@@ -61,7 +60,6 @@ export function folderIpc(d: FolderIpcDeps) {
     guards,
     plainTasks,
     restores,
-    documentSessions,
     events,
     validConfig,
     baseOf,
@@ -171,8 +169,7 @@ export function folderIpc(d: FolderIpcDeps) {
         if (pluginsStopped) await rebasePlugins();
         // Moved or not, the backend starts again in whichever folder is the app's now (never while quitting).
         if (backendStopped) void backendRebase().catch((err: unknown) => console.error("Could not start the backend after the move", err));
-        // The reader's watches were checked against the folder as it was.
-        documentSessions.closeAll();
+        // What was checked against the folder as it was (the reader's watches) no longer holds.
         events.folderChanged();
       }
       // The window always gets the state as it is now, whatever happened.

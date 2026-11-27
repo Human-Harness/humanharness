@@ -2,8 +2,8 @@
 // call the core makes today.
 import path from "node:path";
 import type { CoreMainCtx, CoreSender } from "@humanharness/mod-sdk/core";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { MOD_APP_CHANNELS, registerModAppChannels } from "../../src/main/mods/app-channels";
+import { describe, expect, it, vi } from "vitest";
+import { registerModAppChannels } from "../../src/main/mods/app-channels";
 import { type CoreAppParts, coreAppFor } from "../../src/main/mods/core-app";
 import { type CoreDocumentsDeps, coreDocuments } from "../../src/main/mods/core-documents";
 import { createCoreEvents } from "../../src/main/mods/core-events";
@@ -171,6 +171,23 @@ describe("the moments a core mod hears", () => {
     expect(heard).toHaveLength(2);
   });
 
+  it("dispose() reaches it as it goes off or the app quits, once, while it can still push", async () => {
+    const pushed: unknown[] = [];
+    const h = await host({ push: (channel, value) => void pushed.push([channel, value]) });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const off = coreMod(h);
+    off.on.dispose!(() => {
+      throw new Error("boom");
+    });
+    off.on.dispose!(() => off.push("hh:documentWatchEnded", 1));
+    const quit = coreMod(h, "other");
+    quit.on.dispose!(() => quit.push("hh:documentWatchEnded", 2));
+    await h.set("doc", false);
+    expect(pushed).toEqual([["hh:documentWatchEnded", 1]]);
+    await h.stop();
+    expect(pushed).toEqual([["hh:documentWatchEnded", 1], ["hh:documentWatchEnded", 2]]);
+  });
+
   it("a listener that throws never reaches the call site, and the others still hear", async () => {
     const h = await host();
     vi.spyOn(console, "error").mockImplementation(() => {});
@@ -189,12 +206,7 @@ describe("the moments a core mod hears", () => {
 });
 
 describe("the sender of an app channel call", () => {
-  // No app channel is listed yet (the documents mod's come with it): two are listed for these tests only.
-  const listed = MOD_APP_CHANNELS as unknown as string[];
-  afterEach(() => void listed.splice(0));
-
   async function wired() {
-    listed.push("hh:watchDocument", "hh:unwatchDocument");
     const h = await host();
     const ipc = new Map<string, (sender: CoreSender, ...args: unknown[]) => unknown>();
     registerModAppChannels((channel, fn) => void ipc.set(channel, fn), () => h);
@@ -222,7 +234,7 @@ describe("the sender of an app channel call", () => {
     const off = ctx.handleFrom("hh:watchDocument", () => 1);
     expect(() => coreMod(h, "other").handle("hh:watchDocument", () => 2)).toThrow(/already handles/);
     off();
-    expect(await ipc.get("hh:watchDocument")!({ id: 1 })).toEqual({ ok: false, reason: "not-ready" });
+    expect(await ipc.get("hh:watchDocument")!({ id: 1 })).toBeNull();
     ctx.handleFrom("hh:watchDocument", () => 1);
     await h.set("doc", false);
     expect(h.handles("hh:watchDocument")).toBe(false);
@@ -237,7 +249,7 @@ describe("harness and local mods get none of it", () => {
     h.registerForTest("plain", "Plain", (c) => void (ctx = c as never), { origin });
     const on = ctx.on as Record<string, unknown>;
     expect([ctx.app, ctx.handle, ctx.handleFrom]).toEqual([undefined, undefined, undefined]);
-    expect([on.historyCommit, on.windowClosed, on.folderChanged]).toEqual([undefined, undefined, undefined]);
+    expect([on.historyCommit, on.windowClosed, on.folderChanged, on.dispose]).toEqual([undefined, undefined, undefined, undefined]);
     expect(coreApp).not.toHaveBeenCalled();
   });
 });

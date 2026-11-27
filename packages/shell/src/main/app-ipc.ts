@@ -9,7 +9,6 @@ import { chooseModeHandler } from "./mode-ipc";
 import { setPhaseHandler } from "./phase-ipc";
 import { reviewHandlers } from "./review-ipc";
 import { fileHandlers, openPathIpc } from "./file-ipc";
-import { documentIpc } from "./document-ipc";
 import { registerPluginsIpc } from "./plugin-ipc";
 import { jobsIpc } from "./jobs/jobs-host";
 import { linkedIpcDeps, registerLinkedIpc } from "./linked-ipc";
@@ -60,7 +59,6 @@ export function registerAppIpc(d: LifecycleDeps): void {
       interruptTasks: d.interruptTasks,
       dropRuntime: d.dropRuntime,
       saveConfigPatch: d.saveConfigPatch,
-      documentSessions: d.documentSessions,
       events: d.events,
       dropDataStoresUnder: d.dropDataStoresUnder,
       settleScopes: d.settleScopes,
@@ -200,12 +198,6 @@ export function registerAppIpc(d: LifecycleDeps): void {
   // The person's pick of a phase (task-phases spec §4.2): the acceptance comes back as data.
   d.handle("hh:setPhase", setPhaseHandler({ quitting: () => d.quitting, blocked: d.turnBlocked, setPhase: (to, task) => d.tasks.setPhase(to, task) }));
   d.handleAll(openPathIpc({ validConfig: d.validConfig, baseOf: d.baseOf, workReferences: d.workReferences, shell }));
-  const reader = documentIpc({ documentRoots: d.documentRoots, documentSessions: d.documentSessions });
-  d.handle("hh:readDocument", reader["hh:readDocument"]);
-  d.handle("hh:readImage", reader["hh:readImage"]);
-  d.handle("hh:documentsExist", reader["hh:documentsExist"]);
-  d.handleFrom("hh:watchDocument", reader["hh:watchDocument"]);
-  d.handleFrom("hh:unwatchDocument", reader["hh:unwatchDocument"]);
   // Reviews (review spec §5.6): every answer is data; nothing reaches the service unless the agent may edit the folder (D0).
   d.handleAll(reviewHandlers(d.reviews, () => d.harness.permissions.edit === "folder"));
   // File timelines (file-timeline spec §6.3): every harness (Q1); every answer is data.
@@ -291,7 +283,6 @@ export function registerAppIpc(d: LifecycleDeps): void {
       folderBusy: d.hold.folderBusy,
       plainTasks: d.plainTasks,
       restores: d.restores,
-      documentSessions: d.documentSessions,
       events: d.events,
       validConfig: d.validConfig,
       baseOf: d.baseOf,

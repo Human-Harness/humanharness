@@ -9,11 +9,11 @@ import {
   MAX_DIFF_BYTES,
   canonicalDocumentPath,
   isMarkdownFile,
+  locate,
   readPrefix,
   textDiff,
 } from "@humanharness/workspace";
 import { type DiffRunner, IN_PROCESS_DIFF_MS, inProcessDiff } from "./diff-runner";
-import { locate } from "./documents";
 import { isSha } from "./history-view";
 import { stillSafe } from "./open-path";
 

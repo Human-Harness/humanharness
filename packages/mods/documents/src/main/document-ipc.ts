@@ -1,5 +1,5 @@
+import type { CoreSender } from "@humanharness/mod-sdk/core";
 import type { DocumentRead } from "@humanharness/protocol";
-import type { WebContents } from "electron";
 import { MAX_EXIST_PATHS, documentsExist, readDocument, readImage } from "./documents";
 
 export interface DocumentIpcDeps {
@@ -47,7 +47,7 @@ export function documentIpc(d: DocumentIpcDeps) {
         return paths.map(() => false);
       }
     },
-    "hh:watchDocument": async (sender: WebContents, rel: unknown): Promise<number | null> => {
+    "hh:watchDocument": async (sender: CoreSender, rel: unknown): Promise<number | null> => {
       try {
         const roots = await documentRoots();
         return roots ? await documentSessions.watch(sender.id, rel, roots) : null;
@@ -55,6 +55,6 @@ export function documentIpc(d: DocumentIpcDeps) {
         return null;
       }
     },
-    "hh:unwatchDocument": (sender: WebContents, id: unknown) => documentSessions.unwatch(sender.id, id),
+    "hh:unwatchDocument": (sender: CoreSender, id: unknown) => documentSessions.unwatch(sender.id, id),
   };
 }

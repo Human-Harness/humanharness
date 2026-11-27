@@ -9,11 +9,12 @@ async function host() {
   return h;
 }
 
-// The reader's five and reviews' nine are the documents mod's. The context panel's seven and search's two left the app
+// The reader's five, reviews' nine and the file timeline's three are the documents mod's. The context panel's seven and search's two left the app
 // channels for their mods' own ipc (context-cleanup, search-cleanup).
 const READER = ["hh:readDocument", "hh:readImage", "hh:documentsExist", "hh:watchDocument", "hh:unwatchDocument"];
 const WRITES = ["Answer", "Comment", "EditDraft", "Reopen", "Send", "Approve", "ApprovedText"].map((n) => `hh:review${n}`);
-const ALL = [...READER, "hh:reviewView", "hh:reviewSummaries", ...WRITES];
+const FILES = ["hh:fileTimeline", "hh:fileDiff", "hh:fileRestore"];
+const ALL = [...READER, "hh:reviewView", "hh:reviewSummaries", ...WRITES, ...FILES];
 
 function wired(h: ModHost) {
   const ipc = new Map<string, (sender: { id: number }, ...args: unknown[]) => unknown>();
@@ -22,7 +23,7 @@ function wired(h: ModHost) {
 }
 
 describe("app channels a core mod answers", () => {
-  it("lists the reader's and reviews' channels, and registers each", async () => {
+  it("lists the reader's, reviews' and the file timeline's channels, and registers each", async () => {
     const h = await host();
     const handle = vi.fn();
     expect(MOD_APP_CHANNELS).toEqual(ALL);
@@ -41,6 +42,7 @@ describe("app channels a core mod answers", () => {
     for (const channel of ["hh:reviewView", ...WRITES]) expect(await call(channel, "a.md"), channel).toEqual({ ok: false, reason: "not-ready" });
     expect(await call("hh:reviewSummaries", ["a.md", "b.md"])).toEqual([null, null]);
     expect(await call("hh:reviewSummaries", "a.md")).toEqual([]);
+    for (const channel of FILES) expect(await call(channel, "a.md"), channel).toEqual({ ok: false, reason: "not-ready" });
   });
 
   it("refuses a channel that is not listed, so the former search channels are not reachable through `handle`", async () => {

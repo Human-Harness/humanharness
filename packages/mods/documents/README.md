@@ -1,8 +1,9 @@
 # Documents
 
-The main side of the reader and of reviews, and the agent's side of both: reads a document or an image inside the
-person's folder or a reference folder, says which paths exist, watches the open document, does the person's side of a
-review, and gives the agent the writing guide and the three review tools.
+The main side of the reader, of reviews and of file timelines, and the agent's side of the first two: reads a document
+or an image inside the person's folder or a reference folder, says which paths exist, watches the open document, does the
+person's side of a review, shows a file's timeline and diffs and takes one file back, and gives the agent the writing
+guide and the three review tools.
 
 Documents is a core mod: it ships with the app and is on by default.
 
@@ -22,12 +23,23 @@ Documents is a core mod: it ships with the app and is on by default.
 - `src/main/review-ipc.ts`: the app channels `hh:reviewView`, `hh:reviewSummaries`, `hh:reviewAnswer`,
   `hh:reviewComment`, `hh:reviewEditDraft`, `hh:reviewReopen`, `hh:reviewSend`, `hh:reviewApprove` and
   `hh:reviewApprovedText`. A change in a review, by either side, is pushed on `hh:reviewChanged`.
+- `src/main/file-ipc.ts`: the app channels `hh:fileTimeline` and `hh:fileDiff`. Each commit's paths (null: too many to
+  list) are pushed on `hh:fileCommits`, from `ctx.on.historyCommit`.
+- `src/main/file-timeline.ts`: `FileTimelineService`, a file's timeline, its diffs and going back one file;
+  `src/main/app-file-timeline.ts` builds it from `ctx.app.documents`. `hh:fileRestore` hands it to
+  `ctx.app.history.restoreFile`: the core runs its checks, asks with the native dialog, and only after a yes gives it
+  the restore guard to write through.
+- `src/main/file-diff.ts`: what changed in a file (Markdown by blocks, text by lines, binary by size). The app computes
+  it in a worker thread (`src/main/diff-runner.ts` and `src/main/diff-worker.ts`); the shell's build makes the worker's
+  entry from this folder, and `ctx.app.documents.diffWorker()` says where it is. The view's types and the binary check
+  stay in `@humanharness/workspace`.
 - `src/main/agent.ts`: through `ctx.on.instructions` the writing guide, the harness's document kinds and the review
   rules; through `ctx.on.agentTools` the tools `ask_in_document`, `read_review` and `reply_comment`, only when the agent
   may edit the folder. In the app a tool call goes through `ReviewService`, so both sides share its locks.
 - `src/ui.ts`: registers nothing yet; the reader is still drawn by `@humanharness/ui`.
 - With the mod off, the app answers each channel as its caller already handles it (`mods/app-channels.ts` in the shell):
   `not-ready` for a read, null for an image or a watch, false for every path; `not-ready` for each review channel,
-  except `hh:reviewSummaries`, which answers null for every path. The agent gets no guide and no review tools.
+  except `hh:reviewSummaries`, which answers null for every path; `not-ready` for `hh:fileTimeline`, `hh:fileDiff` and
+  `hh:fileRestore`, and no `hh:fileCommits` push. The agent gets no guide and no review tools.
 - With no app (a headless run), the main registers only `instructions` and `agentTools`. A tool call then writes the
   review in the run's folder, under the open task (`ctx.tasks.running`).

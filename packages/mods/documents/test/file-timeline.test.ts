@@ -2,8 +2,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { History, MAX_DIFF_BYTES, REVIEWS_PREFIX, blobId } from "@humanharness/workspace";
+import { History, REVIEWS_PREFIX, blobId } from "@humanharness/workspace";
 import { limitDiffs, workerDiff } from "../src/main/diff-runner";
+import { MAX_DIFF_BYTES } from "../src/main/file-diff";
 import { FileTimelineService } from "../src/main/file-timeline";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-fts-"));

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { DIFF_CONTEXT_LINES, MAX_DIFF_BYTES, MAX_DIFF_LINES, compactLines, cutBytes, diffFile, isBinary, lineChanges, textDiff, wordParts } from "../src/file-diff";
+import { isBinary } from "@humanharness/workspace";
+import { DIFF_CONTEXT_LINES, MAX_DIFF_BYTES, MAX_DIFF_LINES, compactLines, cutBytes, diffFile, lineChanges, textDiff, wordParts } from "../src/main/file-diff";
 
 const side = (text: string) => ({ kind: "bytes" as const, bytes: Buffer.from(text), size: Buffer.byteLength(text) });
 const absent = { kind: "absent" as const };

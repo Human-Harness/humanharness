@@ -3,7 +3,8 @@ import type { InvokeChannel } from "@humanharness/protocol/channels";
 import type { ModHost } from "./host";
 
 /**
- * The app channels a core mod answers (`ctx.handle`): the reader's five and the nine of reviews, the documents mod's.
+ * The app channels a core mod answers (`ctx.handle`): the reader's five, the nine of reviews and the file timeline's
+ * three, all the documents mod's.
  * Sidekick's 26 left for the mod's own channels in 1b, the context panel's seven in context-cleanup, search's two in
  * search-cleanup.
  */
@@ -22,6 +23,9 @@ export const MOD_APP_CHANNELS = [
   "hh:reviewSend",
   "hh:reviewApprove",
   "hh:reviewApprovedText",
+  "hh:fileTimeline",
+  "hh:fileDiff",
+  "hh:fileRestore",
 ] as const satisfies readonly InvokeChannel[];
 
 const notReady = () => ({ ok: false, reason: "not-ready" });
@@ -44,6 +48,9 @@ const OFF: Record<(typeof MOD_APP_CHANNELS)[number], (args: unknown[]) => unknow
   "hh:reviewSend": notReady,
   "hh:reviewApprove": notReady,
   "hh:reviewApprovedText": notReady,
+  "hh:fileTimeline": notReady,
+  "hh:fileDiff": notReady,
+  "hh:fileRestore": notReady,
 };
 
 /**

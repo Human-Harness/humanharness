@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { MAX_DIFF_BLOCKS, MAX_DIFF_OUTPUT, diffFile, diffMarkdown as diffMarkdownOrNull, markdownBlocks, parseableMarkdown } from "../src/file-diff";
+import { MAX_DIFF_BLOCKS, MAX_DIFF_OUTPUT, diffFile, diffMarkdown as diffMarkdownOrNull, markdownBlocks, parseableMarkdown } from "../src/main/file-diff";
 
 const side = (text: string) => ({ kind: "bytes" as const, bytes: Buffer.from(text), size: Buffer.byteLength(text) });
 const diffMarkdown = (a: string, b: string) => {
@@ -145,7 +145,7 @@ describe("what the parser may take (bounded Markdown diff)", () => {
   };
 
   it("real documents still parse: the repo's plans, cut to 200 KB, give blocks", () => {
-    const dir = resolve(__dirname, "../../../docs/superpowers/plans");
+    const dir = resolve(__dirname, "../../../../docs/superpowers/plans");
     const all = readdirSync(dir)
       .filter((f) => f.endsWith(".md"))
       .sort()

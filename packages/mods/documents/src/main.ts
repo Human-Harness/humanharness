@@ -2,9 +2,12 @@ import { defineMod } from "@humanharness/mod-sdk";
 import type { CoreAgentInfo, CoreMainCtx } from "@humanharness/mod-sdk/core";
 import { ReviewLocks, runReviewRequest } from "@humanharness/workspace";
 import { documentsAgent } from "./main/agent";
+import { appFileTimeline } from "./main/app-file-timeline";
 import { documentIpc } from "./main/document-ipc";
 import { DocumentSessions } from "./main/document-sessions";
 import { DocumentWatchers } from "./main/documents";
+import { fileHandlers } from "./main/file-ipc";
+import type { FileTimelineDeps } from "./main/file-timeline";
 import { appReviews } from "./main/app-reviews";
 import { reviewHandlers } from "./main/review-ipc";
 
@@ -30,6 +33,18 @@ export default defineMod({
     const reviews = appReviews(app.documents, (path) => ctx.push("hh:reviewChanged", path));
     review = (folder, request) => reviews.agent(folder, request);
     for (const [channel, handler] of Object.entries(reviewHandlers(reviews, () => app.documents.canEdit()))) ctx.handle(channel as `hh:${string}`, handler);
+    // The file timeline: its reads are the mod's. A one-file go-back is confirmed by the core, which asks on the window
+    // that asked and, only after a yes, hands the service the restore guard to write through.
+    const timeline = appFileTimeline(app.documents);
+    for (const [channel, handler] of Object.entries(fileHandlers(timeline))) ctx.handle(channel as `hh:${string}`, handler);
+    ctx.handleFrom("hh:fileRestore", (sender, file, commit) =>
+      app.history.restoreFile(sender, file, commit, {
+        restorePrompt: (f, c) => timeline.restorePrompt(f, c),
+        restore: (f, c, guard) => timeline.restore(f, c, guard as FileTimelineDeps["restore"]),
+      }),
+    );
+    // Each commit's paths (null: refresh them all), so an open timeline gets its new entry.
+    ctx.on.historyCommit((paths) => ctx.push("hh:fileCommits", paths));
     // The reader's open documents (document-reader spec §5.3), by window: the window that asked for a watch hears when
     // its document changes, and when a watch ends without it asking, so it watches again.
     const sessions: DocumentSessions = new DocumentSessions(

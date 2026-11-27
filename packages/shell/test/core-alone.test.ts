@@ -26,7 +26,6 @@ function deps(o: Partial<Deps> = {}): Deps {
   return {
     harness: () => ({ id: "h", name: "H", actions: {}, data: {} }) as never,
     config: () => ({ load: async () => ({}) }) as never,
-    here: main,
     guards: { turnBlocked: () => null } as never,
     quitting: () => false,
     moving: () => null,
@@ -50,7 +49,6 @@ function deps(o: Partial<Deps> = {}): Deps {
     closeRuntime: async () => {},
     arrivedInProfile: async () => {},
     workReferences: async () => [],
-    sendToWindow: () => {},
     ...o,
   };
 }
@@ -81,15 +79,12 @@ describe("the core alone (minimal-core 1a)", () => {
 
   it("a commit reaches a core mod as `historyCommit(paths)` too; a restore alone is no commit", () => {
     const historyCommit = vi.fn(async () => {});
-    const sent: unknown[][] = [];
     let onCommit: (c: { paths: string[] }) => void = () => {};
     const history = { onCommit: (fn: typeof onCommit) => ((onCommit = fn), () => {}) };
-    const s = createAppServices(deps({ modHost: () => ({ refresh: async () => {}, historyCommit }), sendToWindow: (...a: unknown[]) => void sent.push(a) }));
+    const s = createAppServices(deps({ modHost: () => ({ refresh: async () => {}, historyCommit }) }));
     s.announceCommits(history as never);
     onCommit({ paths: ["a.md"] });
     expect(historyCommit).toHaveBeenCalledWith(["a.md"]);
-    // The window's own push is as before.
-    expect(sent).toEqual([["hh:fileCommits", ["a.md"]]]);
     s.afterRestore();
     expect(historyCommit).toHaveBeenCalledTimes(1);
   });

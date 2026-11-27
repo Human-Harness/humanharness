@@ -905,7 +905,6 @@ const {
   dataWrites,
   personData,
   harnessUiData,
-  fileTimelines,
   search,
   events,
   commitAnnouncements,
@@ -913,7 +912,6 @@ const {
 } = createAppServices({
   harness: () => harness,
   config: () => config,
-  here,
   guards,
   quitting: () => quitting,
   moving: () => moving,
@@ -939,7 +937,6 @@ const {
   closeRuntime,
   arrivedInProfile,
   workReferences,
-  sendToWindow,
 });
 
 /** The app window (window.ts), with what it reads from here. */
@@ -1298,7 +1295,6 @@ const lifecycle = {
   dropDataStoresUnder,
   engineFor,
   engineHost_,
-  fileTimelines,
   handleAll,
   handleFrom,
   harnessUiData,

@@ -1,4 +1,5 @@
 import { promises as fs } from "node:fs";
+import { builtinModules } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { MAIN_SHARED_MODULES } from "@humanharness/mod-sdk/bundle";
@@ -59,6 +60,21 @@ describe("core mods' main in the built app", () => {
     expect(await fs.readdir(path.join(dest, "plain"))).toEqual(["mod.json"]);
     await expect(buildCoreMods(path.join(tmp, "mods"), dest, ["bad"])).rejects.toThrow(/core mod "bad".*undeclared can't be imported by a core mod/s);
   });
+});
+
+describe("the documents mod in the built app", () => {
+  // What a core mod's built main leaves outside is found beside the app, and a packaged app carries only the shell's
+  // production dependencies (cli's package-config).
+  it("every npm package its main imports is one of the app's dependencies", async () => {
+    const repo = path.resolve(__dirname, "../../..");
+    await buildCoreMods(path.join(repo, "mods"), tmp, ["documents"]);
+    const built = await fs.readFile(path.join(tmp, "documents", "main.js"), "utf8");
+    const specs = [...built.matchAll(/^(?:import|export)\s[^;]*?from\s*"([^"]+)";|^import\s*"([^"]+)";/gm)].map((m) => m[1] ?? m[2]);
+    const outside = [...new Set(specs.filter((s) => !s.startsWith("node:") && !builtinModules.includes(s) && !s.startsWith(".")))].sort();
+    expect(outside).toEqual(["diff", "remark-gfm", "remark-parse", "unified"]);
+    const app = JSON.parse(await fs.readFile(path.join(repo, "shell/package.json"), "utf8")) as { dependencies: Record<string, string> };
+    expect(outside.filter((s) => !(s in app.dependencies))).toEqual([]);
+  }, 60000);
 });
 
 describe("the core does not import a core mod", () => {

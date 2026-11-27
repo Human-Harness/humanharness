@@ -1,7 +1,8 @@
 import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 import { devLauncher } from "@humanharness/blocks";
-import { DIFF_TIMEOUT_MS, type DiffSide, type FileDiffView, diffFile } from "@humanharness/workspace";
+import type { FileDiffView } from "@humanharness/workspace";
+import { DIFF_TIMEOUT_MS, type DiffSide, diffFile } from "./file-diff";
 
 /** One diff, as the worker gets it. */
 export interface DiffJob {

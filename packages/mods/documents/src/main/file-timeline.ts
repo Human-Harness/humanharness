@@ -2,20 +2,9 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { isMarkdownPath, refusedShape } from "@humanharness/harness-sdk/documents";
 import type { FileDiffResult, FileRefusal, FileRestoreAnswer, FileRestorePromptResult, FileTimelineResult, TimelineEntry } from "@humanharness/protocol";
-import {
-  type DiffSide,
-  FILE_RESTORE_PREFIX,
-  type History,
-  MAX_DIFF_BYTES,
-  canonicalDocumentPath,
-  isMarkdownFile,
-  locate,
-  readPrefix,
-  textDiff,
-} from "@humanharness/workspace";
+import { FILE_RESTORE_PREFIX, type History, canonicalDocumentPath, locate, readPrefix, stillSafe } from "@humanharness/workspace";
 import { type DiffRunner, IN_PROCESS_DIFF_MS, inProcessDiff } from "./diff-runner";
-import { isSha } from "./history-view";
-import { stillSafe } from "./open-path";
+import { type DiffSide, MAX_DIFF_BYTES, isMarkdownFile, textDiff } from "./file-diff";
 
 export interface FileTimelineDeps {
   /** The person's folder (the active profile's); null when the app isn't set up. */
@@ -42,6 +31,8 @@ type Refusal = { ok: false; reason: FileRefusal };
 type Side = { side: DiffSide; oid: string | null };
 
 const no = (reason: FileRefusal): Refusal => ({ ok: false, reason });
+/** A commit id as the history writes it. */
+const isSha = (v: unknown): v is string => typeof v === "string" && /^[0-9a-f]{40}$/.test(v);
 
 /**
  * What a side reads: the cap plus a few bytes, so `diffFile`'s cut can back up to a whole UTF-8 character. A bigger
@@ -210,8 +201,11 @@ export class FileTimelineService {
     return entry;
   }
 
-  /** "Go back to this version" (§5), after the core's confirmation: one file, its own untagged commit. */
-  restore(rel: unknown, commit: unknown): Promise<FileRestoreAnswer> {
+  /**
+   * "Go back to this version" (§5), after the core's confirmation: one file, its own untagged commit. `guard` writes it:
+   * in the app, the restore guard the core hands over after the person's yes.
+   */
+  restore(rel: unknown, commit: unknown, guard: FileTimelineDeps["restore"] = this.d.restore): Promise<FileRestoreAnswer> {
     return this.guarded("bring the file back", async () => {
       const r = await this.resolve(rel);
       if (!r.ok) return r;
@@ -221,7 +215,7 @@ export class FileTimelineService {
       const target = found.kind === "approval" ? `v${found.version}` : `the version of ${found.at}`;
       let skipped: string[] = [];
       try {
-        await this.d.restore(async (h) => {
+        await guard(async (h) => {
           skipped = (await h.restoreFile(r.path, found.to, `${FILE_RESTORE_PREFIX}${r.path} to ${target}`)).skipped;
         });
       } catch (err) {

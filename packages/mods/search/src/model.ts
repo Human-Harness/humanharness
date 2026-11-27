@@ -1,4 +1,4 @@
-import { SEARCH_INDEX_KINDS, type SearchAnswer, type SearchHitView, type SearchRowKind } from "../client";
+import { SEARCH_INDEX_KINDS, type SearchAnswer, type SearchHitView, type SearchRowKind } from "@humanharness/ui";
 
 export interface Section {
   key: SearchRowKind | "recent";

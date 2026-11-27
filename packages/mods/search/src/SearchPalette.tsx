@@ -1,7 +1,6 @@
 import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { HarnessClient, SearchAnswer, SearchFilters, SearchHitView, SearchIndexKind, SearchMarked, SearchRowKind, SearchStatus } from "../client";
-import { Toggle } from "../guide/Toggle";
+import { type HarnessClient, type SearchAnswer, type SearchFilters, type SearchHitView, type SearchIndexKind, type SearchMarked, type SearchRowKind, type SearchStatus, Toggle } from "@humanharness/ui";
 import { questionText } from "./ask";
 import { type LocalRows, type Section, chipsOf, rowsOf, sectionsOf, step } from "./model";
 

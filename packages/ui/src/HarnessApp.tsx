@@ -30,7 +30,6 @@ import { type SettingsTab, SettingsPage } from "./SettingsPage";
 import { SetupFlow } from "./SetupFlow";
 import { type RailEntry, railCounts, railEntries } from "./shell-nav";
 import type { SearchIntent } from "./search/intent";
-import { SearchHost } from "./search/SearchHost";
 import type { StartViewCopy } from "./StartView";
 
 export interface HarnessAppProps {
@@ -712,8 +711,6 @@ export function HarnessApp({ client, blocks = {}, stateBlocks = [], renderSide, 
       <AppProvider value={app}>
         <LayoutOverlay layout={layout} />
       </AppProvider>
-      {/* ⌘K (search spec §5.1): outside the screen, so it works over Settings too. */}
-      <SearchHost client={client} state={state} openScope={openScope} onIntent={searchIntent} chatContext={() => (screen === "work" ? (searchContextRef.current?.() ?? null) : null)} />
     </I18nextProvider>
   );
 }

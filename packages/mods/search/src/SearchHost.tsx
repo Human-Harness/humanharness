@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { type AppState, type ChatSearchContext, type HarnessClient, type ScopeView, type SearchHitView, isConfigured } from "../client";
-import { useBlocks } from "../layout/registry";
-import type { SearchIntent } from "./intent";
+import { type AppState, type ChatSearchContext, type HarnessClient, type ScopeView, type SearchHitView, type SearchIntent, isConfigured, useBlocks } from "@humanharness/ui";
 import { commandRows, settingRows } from "./local";
 import { SearchPalette, isMod } from "./SearchPalette";
 

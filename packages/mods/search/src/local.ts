@@ -7,14 +7,16 @@ import {
   type SearchHitView,
   type SearchSettingsTab,
   type SettingState,
+  type BlockRegistry,
   isConfigured,
   localScore,
   markLocal,
   searchCommands,
+  searchable,
   settingAvailable,
-} from "../client";
-import type { BlockRegistry } from "../layout/registry";
-import { searchable, tabLabel, visibleTabs } from "../settings-tabs";
+  tabLabel,
+  visibleTabs,
+} from "@humanharness/ui";
 
 /** What the window's state says about each setting's `needs`. */
 export function settingState(state: AppState): SettingState {

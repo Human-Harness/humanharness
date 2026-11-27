@@ -8,7 +8,8 @@ import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { getEngine } from "@humanharness/engines";
 import { claudeResultLine, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
 import { type LoadedHarness, loadHarness } from "@humanharness/harness-sdk";
-import { type RuntimeOptions, createWorkspace, reviewAgent } from "../src";
+import { type RuntimeOptions, createWorkspace } from "../src";
+import { reviewAgent } from "./documents-agent";
 
 /**
  * The agent side of a harness, as the app builds it: AGENTS.md byte for byte, the `ui` server's tool list for a task and

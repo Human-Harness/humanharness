@@ -74,13 +74,10 @@ export interface ReviewDeps {
   now?(): Date;
 }
 
-/** The review round never reached the agent (no turn started): its items go back to what they were (§5.3). */
-export class RoundNotStarted extends Error {
-  constructor(readonly reason: unknown) {
-    super(reason instanceof Error ? reason.message : String(reason));
-    this.name = "RoundNotStarted";
-  }
-}
+/**
+ * The app's `RoundNotStarted`, known by its name: a built core mod can't import the shell, so it can't test the class.
+ */
+const notStarted = (err: unknown): err is Error & { reason?: unknown } => err instanceof Error && err.name === "RoundNotStarted";
 
 /** A blob id as the window got it with the view. */
 const BLOB_ID = /^[0-9a-f]{40}$/;
@@ -283,7 +280,7 @@ export class ReviewService {
       .then(() => this.d.round(round))
       .catch(async (err: unknown) => {
         // Delivered and failed later: the agent has the items, so they stay sent (no round twice).
-        if (!(err instanceof RoundNotStarted)) return console.error("The review round failed", err);
+        if (!notStarted(err)) return console.error("The review round failed", err);
         console.error("The review round could not start", err.reason);
         await this.unsend(round.path, ids, before);
       });

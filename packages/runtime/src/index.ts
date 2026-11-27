@@ -2,7 +2,6 @@ export * from "./events";
 export * from "./transport";
 export { classifyError } from "@humanharness/engines";
 export type { AgentToolDefinition, AgentToolSet } from "@humanharness/blocks";
-export { reviewAgent } from "./review-agent";
 export { createRuntime, runtimeOnSlot, type HarnessRuntime, type RunningTurn, type RuntimeOptions } from "./runtime";
 export { createWorkspace, STEP_CLAUDE_ONLY, StepClaudeOnlyError, type HarnessWorkspace, type SessionSlot, type SlotOptions, type SlotRef, type SlotSendOptions, type WorkspaceOptions } from "./workspace";
 export { TurnLedger, samePath, type TurnWindow } from "./turn-ledger";

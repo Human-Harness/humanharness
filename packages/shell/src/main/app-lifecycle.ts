@@ -156,7 +156,7 @@ export async function onLoaded(d: LifecycleDeps): Promise<void> {
       // The sender is the WebContents the mod's `handleFrom` got: the dialog attaches to its window.
       restoreFile: (sender, file, commit, service) => restores().restoreFile(sender as WebContents, file, commit, service as unknown as FileRestoreService),
     },
-    documents: coreDocuments({ validConfig, baseOf, workReferences, currentHistory, tasks: () => d.tasks, quitting: () => d.quitting, turnBlocked, actions: () => harness.actions, here }),
+    documents: coreDocuments({ validConfig, baseOf, workReferences, currentHistory, tasks: () => d.tasks, quitting: () => d.quitting, turnBlocked, actions: () => harness.actions, harness: () => harness, here }),
     uiLanguage: async () => languageName((await d.config.load()).language ?? DEFAULT_LANGUAGE),
     // The daily card (sidekick plan Decision 12): the day's note titles in every scope and its tokens, titles only.
     // The task manager can't list open tasks (Open question 7): nothing is open.

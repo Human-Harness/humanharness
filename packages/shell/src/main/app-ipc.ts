@@ -7,7 +7,6 @@ import { flushFileIndexes } from "@humanharness/workspace";
 import { languageHandlers } from "./language-ipc";
 import { chooseModeHandler } from "./mode-ipc";
 import { setPhaseHandler } from "./phase-ipc";
-import { reviewHandlers } from "./review-ipc";
 import { fileHandlers, openPathIpc } from "./file-ipc";
 import { registerPluginsIpc } from "./plugin-ipc";
 import { jobsIpc } from "./jobs/jobs-host";
@@ -199,7 +198,6 @@ export function registerAppIpc(d: LifecycleDeps): void {
   d.handle("hh:setPhase", setPhaseHandler({ quitting: () => d.quitting, blocked: d.turnBlocked, setPhase: (to, task) => d.tasks.setPhase(to, task) }));
   d.handleAll(openPathIpc({ validConfig: d.validConfig, baseOf: d.baseOf, workReferences: d.workReferences, shell }));
   // Reviews (review spec §5.6): every answer is data; nothing reaches the service unless the agent may edit the folder (D0).
-  d.handleAll(reviewHandlers(d.reviews, () => d.harness.permissions.edit === "folder"));
   // File timelines (file-timeline spec §6.3): every harness (Q1); every answer is data.
   d.handleAll(fileHandlers(d.fileTimelines));
   // Language on demand (plan 5b): every answer is data; the state is pushed on hh:language.

@@ -1,7 +1,7 @@
 // The core-only part of the mod API (minimal-core 1a): what a mod the app ships (`packages/mods/*`) gets beyond `MainCtx`.
 // Not exported from the package's index, so hh.d.ts and the released contract never show it: a harness's or a local
 // mod's ctx has no `app`, and its `push` reaches only its own ui (never an app channel).
-import type { Disposer, MainCtx, ModTokens, TaskRef, Tier } from "./types";
+import type { AgentInfo, Disposer, MainCtx, ModTokens, TaskRef, Tier } from "./types";
 
 /** A model as Settings › Models resolves it: passed back to `sessions.open` as it is. */
 export interface CoreModelProfile {
@@ -232,6 +232,10 @@ export interface CoreApp {
   };
   /** What the documents mod needs of the app: the folder, its history, the tasks' review rounds. */
   readonly documents: {
+    /** The harness lets the agent edit the folder: only then does a document have a review. */
+    canEdit(): boolean;
+    /** The harness's document kinds, as `CoreAgentInfo.documentKinds`. */
+    kinds(): Readonly<Record<string, unknown>>;
     /** Null when the app isn't set up. */
     folder(): Promise<CoreFolder | null>;
     /** The folder's local history (`@humanharness/workspace`'s `History`; the mod casts it); null when it has none. */
@@ -262,6 +266,14 @@ export interface CoreApp {
     /** A note in `scope`, never over another one, with its history commit. */
     note(o: { scope: string; action?: string; title: string; decision: string }): Promise<void>;
   };
+}
+
+/** What a core mod's `instructions()` and `agentTools()` get. Harness and local mods get `AgentInfo` alone. */
+export interface CoreAgentInfo extends AgentInfo {
+  /** The folder the runtime asking works in. */
+  folder: string;
+  /** The harness's document kinds (the protocol's `DocumentKind` by id); `{}` without. */
+  documentKinds: Readonly<Record<string, unknown>>;
 }
 
 /** A core mod's ctx: `MainCtx`, with a push to the window on an existing app channel (`hh:…`) and the app's services. */

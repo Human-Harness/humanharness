@@ -3,7 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { History, ReviewLocks, blobId, loadReview, runReviewRequest } from "@humanharness/workspace";
-import { type ReviewDeps, type ReviewRound, ReviewService, RoundNotStarted } from "../src/main/reviews";
+import { RoundNotStarted } from "../../../shell/src/main/review-round";
+import { type ReviewDeps, type ReviewRound, ReviewService } from "../src/main/reviews";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-review-svc-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));

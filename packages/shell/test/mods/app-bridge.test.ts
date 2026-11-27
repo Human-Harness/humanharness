@@ -41,6 +41,7 @@ function fakes(over: Partial<CoreDocumentsDeps> = {}) {
     quitting: () => false,
     turnBlocked: () => null,
     actions: () => ({ plan: { label: "Plan the week" } }),
+    harness: () => ({ permissions: { edit: "none" } }) as never,
     here: "/app/out/main",
     ...over,
   };
@@ -59,6 +60,17 @@ describe("ctx.app.documents", () => {
     expect(d.workReferences).not.toHaveBeenCalled();
     expect(await folder!.roots()).toEqual(["/base", "/ref/a", "/ref/b"]);
     expect(d.workReferences).toHaveBeenCalledWith(expect.objectContaining({ folder: "/base" }), "/base");
+  });
+
+  it("whether the agent may edit the folder, and the harness's document kinds, read when asked", async () => {
+    let harness: unknown = { permissions: { edit: "none" } };
+    const ctx = coreMod(await host({ coreApp: appOf({ documents: fakes({ harness: () => harness as never }).documents }) }));
+    expect(ctx.app.documents.canEdit()).toBe(false);
+    expect(ctx.app.documents.kinds()).toEqual({});
+    const kinds = { adr: { when: "A decision.", sections: ["Status"] } };
+    harness = { permissions: { edit: "folder" }, documents: { kinds } };
+    expect(ctx.app.documents.canEdit()).toBe(true);
+    expect(ctx.app.documents.kinds()).toBe(kinds);
   });
 
   it("before setup there is no folder", async () => {

@@ -23,7 +23,6 @@ import { ProfileSwitch } from "./profile-switch";
 import type { Profiles } from "./profiles";
 import type { ResolvedReference } from "./references";
 import { RestoreGuard } from "./restore-guard";
-import { ReviewService } from "./reviews";
 import { actionLabelOf } from "./mods/core-documents";
 import { createCoreEvents } from "./mods/core-events";
 import type { ModHost } from "./mods/host";
@@ -80,7 +79,7 @@ export interface AppServicesDeps {
   sendToWindow(channel: PushChannel, value: unknown): void;
 }
 
-/** The services behind the IPC handlers: holds, restores, profile switches, data requests, reviews, timelines, context, search. */
+/** The services behind the IPC handlers: holds, restores, profile switches, data requests, timelines, context, search. */
 export function createAppServices(d: AppServicesDeps) {
   const {
     validConfig,
@@ -173,31 +172,6 @@ export function createAppServices(d: AppServicesDeps) {
   /** The same handler for the harness UI, which only reads `settings` (it changes them through `client.settings`) and never a mod's own collection. */
   const harnessUiData = harnessUiDataRequests(personData, () => d.harness().settings !== undefined, ownStore);
 
-  /** Document reviews (review spec): the person's side, and the agent's tools for each runtime's folder (one set of locks). */
-  const reviews = new ReviewService({
-    base: async () => {
-      const c = await validConfig();
-      return c ? baseOf(c) : null;
-    },
-    history: () => currentHistory(),
-    trailer: () => d.tasks().trailerNow(),
-    openTask: async () => {
-      const t = await d.tasks().runningTask();
-      return t ? { id: t.id, scope: t.scope } : null;
-    },
-    busy: () => d.tasks().isBusy(),
-    whenSettled: (write) => d.tasks().whenSettled(write),
-    blocked: () => (d.quitting() ? "The app is closing" : turnBlocked()),
-    // The canonical path and the record's scope; rejects with `RoundNotStarted` when no turn started.
-    round: (r) => d.tasks().reviewRound(r),
-    approved: (a) => void d.tasks().documentApproved(a).catch((err: unknown) => console.error("Could not act on the approval", err)),
-    reviewTier: (kind) => {
-      const kinds = d.harness().documents?.kinds;
-      return (kind !== undefined && kinds && Object.hasOwn(kinds, kind) ? kinds[kind].reviewTier : undefined) ?? "standard";
-    },
-    changed: (p) => sendToWindow("hh:reviewChanged", p),
-  });
-
   /** File timelines (file-timeline spec): read from the history; a one-file go-back goes through the restore guard. */
   const fileTimelines = new FileTimelineService({
     base: async () => {
@@ -283,7 +257,6 @@ export function createAppServices(d: AppServicesDeps) {
     dataWrites,
     personData,
     harnessUiData,
-    reviews,
     fileTimelines,
     search,
     events,

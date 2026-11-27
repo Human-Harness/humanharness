@@ -12,7 +12,6 @@ import {
   nativeTheme,
   safeStorage,
   shell,
-  webContents,
 } from "electron";
 import { electronLauncher } from "@humanharness/blocks";
 import { type EngineDef, availableEngines, getEngine } from "@humanharness/engines";
@@ -68,9 +67,6 @@ import {
   UsageLog,
 } from "./usage-log";
 import { type ValidationContext, configProblem, isAppUrl } from "./validate";
-import { openRoots } from "./open-path";
-import { DocumentSessions } from "./document-sessions";
-import { DocumentWatchers } from "./documents";
 import { type ResolvedReference } from "./references";
 import { PluginBackendHost } from "./plugin-host";
 import { PluginPanelsOnDemand, installPluginPanels, safeStorageCrypto } from "./plugin-ipc";
@@ -357,38 +353,6 @@ const { referencesFor, workReferences, harnessLogo, engineLogo, modelsView, supp
 /** The last app state read: it stands in when the state can't be read after a profile change that went through. */
 let lastAppState: AppState | null = null;
 
-/**
- * The reader's open documents (document-reader spec §5.3), by window: main tells the window that asked for a watch
- * when its document changes, and only that window; and when a watch ends without the window asking, so it watches again.
- */
-const documentSessions: DocumentSessions = new DocumentSessions(
-  new DocumentWatchers((id) => {
-    const owner = documentSessions.ownerOf(id);
-    if (owner !== null) sendToContents(owner, "hh:documentChanged", id);
-  }),
-  (owner, id) => sendToContents(owner, "hh:documentWatchEnded", id),
-);
-
-/** Sends to one window by its webContents id, when it is still there. */
-function sendToContents(id: number, channel: PushChannel, value: unknown) {
-  try {
-    const to = webContents.fromId(id);
-    if (to && !to.isDestroyed()) to.send(channel, value);
-  } catch (err) {
-    console.error("Could not send to the window", err);
-  }
-}
-
-/**
- * Where documents and images may be read, from the config only: the person's folder (checked by `validConfig`), then
- * the reference folders that resolved (protected folders already refused) and are usable with it; null before setup.
- */
-async function documentRoots(): Promise<string[] | null> {
-  const c = await validConfig();
-  if (!c) return null;
-  return openRoots(baseOf(c), (await workReferences(c, baseOf(c))).map((r) => r.path));
-}
-
 /** The window's app state; it keeps the job settings and the last state read here. */
 const appState = createAppState({
   harness: () => harness,
@@ -473,7 +437,6 @@ const {
   materialSvc: () => materialSvc,
   tasks: () => tasks,
   linked_,
-  documentSessions,
   jobsChanged,
   jobsReady,
   kickMaterial,
@@ -1006,7 +969,6 @@ const createWindow = () =>
       return pluginsCtl;
     },
     pluginPanels,
-    documentSessions,
     devUrl,
     rendererFile,
     appUrl,
@@ -1335,8 +1297,6 @@ const lifecycle = {
   applyTextSize,
   backendRebase,
   confirmGoBack: engineChange.confirmGoBack,
-  documentRoots,
-  documentSessions,
   dropDataStoresUnder,
   engineFor,
   engineHost_,

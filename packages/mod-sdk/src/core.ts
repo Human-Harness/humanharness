@@ -305,6 +305,8 @@ export type CoreMainCtx<C = undefined> = MainCtx<C> & {
     windowClosed(fn: (senderId: number) => void | Promise<void>): Disposer;
     /** The base folder was moved, changed or switched with the profile: what was checked against it no longer holds. */
     folderChanged(fn: () => void | Promise<void>): Disposer;
+    /** The mod goes (turned off, or the app quits): release what no other moment does. Run at once, never awaited. */
+    dispose?(fn: () => void): Disposer;
   };
   /**
    * Runs `fn` when the base or its data changed under the mod without a task opening or closing: a profile switch or

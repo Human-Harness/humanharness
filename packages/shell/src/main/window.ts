@@ -4,7 +4,6 @@ import type { LoadedHarness } from "@humanharness/harness-sdk";
 import { type TextSize, stepTextSize } from "@humanharness/protocol";
 import type { PushChannel } from "@humanharness/protocol/channels";
 import type { ConfigStore } from "./config";
-import type { DocumentSessions } from "./document-sessions";
 import type { ModHost } from "./mods/host";
 import { MOD_SCHEME, serveModUi } from "./mods/mod-scheme";
 import { isEscapeHatch } from "./mods/safe";
@@ -27,7 +26,6 @@ export interface WindowDeps {
   readonly modHost: ModHost | null;
   readonly pluginsCtl: PluginsController | null;
   readonly pluginPanels: PluginPanelsOnDemand<BrowserWindow>;
-  readonly documentSessions: DocumentSessions;
   readonly devUrl: string | undefined;
   readonly rendererFile: string;
   appUrl(url: string): boolean;
@@ -40,7 +38,7 @@ export interface WindowDeps {
 let textSizeSteps: Promise<void> = Promise.resolve();
 
 export async function createWindow(d: WindowDeps) {
-  const { harness, hooks, here, documentSessions, pluginPanels, sendToWindow, pluginLog, applyTextSize, safeMode } = d;
+  const { harness, hooks, here, pluginPanels, sendToWindow, pluginLog, applyTextSize, safeMode } = d;
   const PAPER = d.paper;
   const win = new BrowserWindow({
     width: 1100,
@@ -65,11 +63,8 @@ export async function createWindow(d: WindowDeps) {
   d.window = win;
   // Read now: once closed, the window's webContents can no longer be asked.
   const contentsId = win.webContents.id;
-  /** What was held for this window's page goes: the reader's watches, and whatever a core mod keyed by it. */
-  const dropPageWatches = () => {
-    documentSessions.closeOwner(contentsId);
-    void d.modHost?.windowClosed(contentsId);
-  };
+  /** What was held for this window's page goes: whatever a core mod keyed by it (the reader's watches). */
+  const dropPageWatches = () => void d.modHost?.windowClosed(contentsId);
   // hh-mod (0b2): the built ui of an on, non-core mod, on the window's session; once per session.
   const modProtocol = win.webContents.session.protocol;
   if (!modProtocol.isProtocolHandled(MOD_SCHEME.scheme)) {

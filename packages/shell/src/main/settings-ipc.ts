@@ -31,7 +31,6 @@ export interface SettingsIpcDeps {
   interruptTasks(): Promise<void>;
   dropRuntime(): Promise<void>;
   saveConfigPatch(patch: AppConfig, before: AppConfig): Promise<void>;
-  documentSessions: { closeAll(): void };
   events: Pick<CoreEvents, "folderChanged">;
   dropDataStoresUnder(root: string): void;
   settleScopes(): Promise<void>;
@@ -59,7 +58,6 @@ export function settingsIpc(d: SettingsIpcDeps) {
     interruptTasks,
     dropRuntime,
     saveConfigPatch,
-    documentSessions,
     events,
     dropDataStoresUnder,
     settleScopes,
@@ -105,8 +103,7 @@ export function settingsIpc(d: SettingsIpcDeps) {
           saveConfigPatch(patch, before),
         );
         if (patch.folder !== undefined && patch.folder !== before.folder) {
-          // The reader's watches were checked against the old folder.
-          documentSessions.closeAll();
+          // What was checked against the old folder (the reader's watches) no longer holds.
           events.folderChanged();
           if (before.folder) dropDataStoresUnder(before.folder);
           await settleScopes()

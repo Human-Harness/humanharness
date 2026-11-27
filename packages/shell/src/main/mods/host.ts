@@ -17,7 +17,7 @@ export const BEFORE_SEND_MS = 6_000;
 export const HOOK_MS = 5_000;
 export const STRIKES = 3;
 
-type HookName = "beforeSend" | "turnStart" | "turnEnd" | "taskOpen" | "taskClose" | "betweenTasks" | "phaseMoved" | "daily" | "close" | "instructions" | "agentTools" | "refresh" | "firstMessage" | "contextChanged" | "dataChanged" | "restored" | "baseGone" | "historyCommit" | "windowClosed" | "folderChanged";
+type HookName = "beforeSend" | "turnStart" | "turnEnd" | "taskOpen" | "taskClose" | "betweenTasks" | "phaseMoved" | "daily" | "close" | "instructions" | "agentTools" | "refresh" | "firstMessage" | "contextChanged" | "dataChanged" | "restored" | "baseGone" | "historyCommit" | "windowClosed" | "folderChanged" | "dispose";
 const HOOKS: readonly HookName[] = ["beforeSend", "turnStart", "turnEnd", "taskOpen", "taskClose", "betweenTasks", "phaseMoved", "daily", "close", "instructions", "agentTools"];
 /** A local calendar day, YYYY-MM-DD. */
 export const localDay = (d: Date): string => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -222,7 +222,7 @@ export class ModHost {
       r.disposers.push(off);
       return off;
     };
-    const events = ["firstMessage", "dataChanged", "restored", "baseGone", "historyCommit", "windowClosed", "folderChanged"] as const;
+    const events = ["firstMessage", "dataChanged", "restored", "baseGone", "historyCommit", "windowClosed", "folderChanged", "dispose"] as const;
     return {
       ...(app ? { app } : {}),
       handle: (name, fn) => answer(name, (args) => fn(...args)),
@@ -278,6 +278,14 @@ export class ModHost {
   }
 
   private dispose(r: Running): void {
+    // A core mod's `on.dispose`, first: it is still on, so it can push.
+    for (const fn of r.hooks.get("dispose") ?? []) {
+      try {
+        fn(undefined as never);
+      } catch (err) {
+        console.error(`Mod ${r.mod.json.id}: its dispose threw`, err);
+      }
+    }
     for (const off of r.disposers.splice(0).reverse()) {
       try {
         off();

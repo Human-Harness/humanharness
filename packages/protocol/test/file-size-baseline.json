@@ -14,7 +14,7 @@
   "packages/shell/src/main/task-manager.ts": 136192,
   "packages/shell/test/move-folder.test.ts": 51200,
   "packages/shell/test/task-manager.test.ts": 80896,
-  "packages/ui/src/ChatView.tsx": 102400,
+  "packages/ui/src/ChatView.tsx": 98304,
   "packages/ui/src/styles.css": 104448,
   "packages/ui/test/fake-client.ts": 78848,
   "packages/workspace/src/history.ts": 54272

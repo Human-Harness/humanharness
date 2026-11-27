@@ -8,14 +8,14 @@ import {
   laterTasks,
   timeAgo,
 } from "@humanharness/protocol";
-import type { InvokeChannel } from "@humanharness/protocol/channels";
 import { isSha } from "./history-view";
 
 /**
  * Every go-back is confirmed here, in main, with a native dialog attached to the window that asked (Marco,
  * 2026-10-28). Harness UI code runs in the same window and JS realm as the core, so a confirmation drawn in the window
- * could be skipped; this one can't. Three go-backs: one file (`hh:fileRestore`), the whole folder (`restore`, the History mod's via `ctx.app.history`) and
- * one task (`restoreTask`, the same). A "Cancel" is data: `{ ok: false, reason: "cancelled" }`, and nothing changes.
+ * could be skipped; this one can't. Three go-backs: one file (a core mod's, `ctx.app.history.restoreFile`), the whole
+ * folder (`restore`, the History mod's via `ctx.app.history`) and one task (`restoreTask`, the same). A "Cancel" is
+ * data: `{ ok: false, reason: "cancelled" }`, and nothing changes.
  */
 
 /** What a go-back dialog is about: the file's version, or the tasks a folder or task go-back undoes. */
@@ -141,8 +141,6 @@ export interface GoBackDeps<S> {
   restorePoint(sha: string): Promise<void>;
   /** The folder back to before the task (index.ts: through the restore guard, which checks the task again). */
   restoreTask(taskId: string): Promise<void>;
-  /** The checks and go-back behind `hh:fileRestore`; without them it answers not-ready (a core mod brings its own). */
-  file?: GoBackFile;
 }
 
 /** One file go-back's own checks and write (the documents mod's file timeline). */
@@ -151,15 +149,15 @@ export interface GoBackFile {
   restore(file: unknown, commit: unknown): Promise<FileRestoreAnswer>;
 }
 
-export const GO_BACK_CHANNELS = ["restore", "restoreTask", "hh:fileRestore"] as const satisfies readonly (InvokeChannel | "restore" | "restoreTask")[];
+export const GO_BACK_CHANNELS = ["restore", "restoreTask"] as const;
 export type GoBackChannel = (typeof GO_BACK_CHANNELS)[number];
 
 /**
- * The three go-back handlers, each told which window asked. Bad input, an unlisted point and a blocked go-back are
- * refused before any dialog. One dialog at a time: a go-back asked while one is open answers cancelled. A yes is
- * cancelled too when more later tasks appeared while the dialog was open (it would undo what the person never saw).
- * The folder and task go-backs throw on failure as before (the panel says it couldn't); the file go-back answers every
- * failure as data.
+ * The folder and task go-back handlers, each told which window asked. Bad input, an unlisted point and a blocked
+ * go-back are refused before any dialog. One dialog at a time: a go-back asked while one is open answers cancelled. A
+ * yes is cancelled too when more later tasks appeared while the dialog was open (it would undo what the person never
+ * saw). They throw on failure as before (the panel says it couldn't); the file go-back (`createGoBacks().file`) answers
+ * every failure as data.
  */
 export function goBackHandlers<S>(d: GoBackDeps<S>): Record<GoBackChannel, (sender: S, ...args: unknown[]) => Promise<unknown>> {
   return createGoBacks(d).handlers;
@@ -236,7 +234,6 @@ export function createGoBacks<S>(d: GoBackDeps<S>) {
       await d.restoreTask(taskId);
       return { ok: true };
     },
-    "hh:fileRestore": async (sender, name, commit) => (d.file ? file(sender, name, commit, d.file) : { ok: false, reason: "not-ready" }),
   };
   return { handlers, file };
 }

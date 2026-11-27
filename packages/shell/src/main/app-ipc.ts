@@ -197,7 +197,6 @@ export function registerAppIpc(d: LifecycleDeps): void {
   // The person's pick of a phase (task-phases spec §4.2): the acceptance comes back as data.
   d.handle("hh:setPhase", setPhaseHandler({ quitting: () => d.quitting, blocked: d.turnBlocked, setPhase: (to, task) => d.tasks.setPhase(to, task) }));
   d.handleAll(openPathIpc({ validConfig: d.validConfig, baseOf: d.baseOf, workReferences: d.workReferences, shell }));
-  // Reviews (review spec §5.6): every answer is data; nothing reaches the service unless the agent may edit the folder (D0).
   // Language on demand (plan 5b): every answer is data; the state is pushed on hh:language.
   if (d.translation) d.handleAll(languageHandlers(d.translation));
   // Cancels the turn and stops the task operation (a closing turn never goes on to the next task).

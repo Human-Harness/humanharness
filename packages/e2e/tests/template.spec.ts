@@ -21,6 +21,11 @@ test("a harness made with init builds with dev, opens, and runs its example task
 
   const { app, page } = await launch(s, { claude: templateScript }, path.join(outDir, "main", "index.js"));
   try {
+    // The template's layout names no `overlay`: the palette comes with the app's.
+    await expect(page.getByRole("button", { name: "Start my-harness" })).toBeVisible();
+    await page.keyboard.press(process.platform === "darwin" ? "Meta+k" : "Control+k");
+    await expect(page.getByRole("dialog", { name: "Search" })).toBeVisible();
+    await page.keyboard.press("Escape");
     await page.getByRole("button", { name: "Start my-harness" }).click();
     await page.getByRole("region", { name: "Where do we start?" }).getByRole("button", { name: /Example/ }).click();
     await expect(page.getByRole("main").getByText("Hola, este harness todavía se está armando.")).toBeVisible();

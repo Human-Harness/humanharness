@@ -87,8 +87,8 @@ Every node may take \`id\` (lowercase letters, digits and \`-\`), \`size\` (\`{ 
 The rules \`layoutSchema\` checks:
 
 - The root is a \`"stack"\`, with a child whose id is \`"home"\` and a child whose id is \`"work"\`.
-- There is exactly one \`{ "core": "task" }\` block, inside the \`"work"\` child.
-- Ids are unique; at most ${LAYOUT_MAX_DEPTH} levels deep (\`LAYOUT_MAX_DEPTH\`) and ${LAYOUT_MAX_NODES} nodes (\`LAYOUT_MAX_NODES\`).
+- There is exactly one \`{ "core": "task" }\` block, inside the \`"work"\` child. Ids are unique; at most ${LAYOUT_MAX_DEPTH} levels deep (\`LAYOUT_MAX_DEPTH\`) and ${LAYOUT_MAX_NODES} nodes (\`LAYOUT_MAX_NODES\`).
+- Only the root takes \`"overlay"\` (mod blocks over the whole screen). Without it you get the app's ⌘K palette (\`{ "mod": "search", "block": "palette" }\`); your list replaces it, \`[]\` turns it off.
 - No other keys. \`blockContentSchema\` checks a block's \`content\`; \`Layout\`, \`LayoutNode\` and \`BlockContent\` are their types.
 
 The screen shows the layout \`settings.json\` picks (\`layouts/<name>.json\`, then \`harness/layouts/<name>.json\`), else

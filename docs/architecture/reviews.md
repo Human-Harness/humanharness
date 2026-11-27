@@ -104,9 +104,9 @@ The window sends the selection's own text (`Selection.toString()`), which puts l
   - `resolve: true` resolves the item, `false` keeps it `open` (the agent asks something back).
 - `read_review({ path })`: the comments and questions not resolved and not drafts, with their answers and their state (`lost` worked out from the text), and the document's status (`none`, `draft`, `approved`, `stale`).
 
-The `ui` bridge only answers "ok", so these tools use a request/answer channel of their own: an `Rpc` like the `data` server's. Its socket and token reach the server as `HH_REVIEW_RPC` and `HH_REVIEW_RPC_TOKEN`. Each request goes to `runReviewRequest` (`packages/workspace/src/review-requests.ts`).
+The `ui` bridge only answers "ok", so these tools use a request/answer channel of their own: an `Rpc` like the `data` server's. It is the runtime's channel for any tool its caller adds (`agentTools`: definitions with a JSON Schema, `tasksOnly`, one handler). The socket, the token and the definitions reach the server as `HH_TOOLS_RPC`, `HH_TOOLS_RPC_TOKEN` and `HH_TOOLS_RPC_DEFS`, and each call is `{ tool, args }`. `reviewAgent` (`packages/runtime/src/review-agent.ts`) builds the three tools and the writing guide for the shell and the CLI, and turns a call into a request. Each request goes to `runReviewRequest` (`packages/workspace/src/review-requests.ts`).
 
-The runtime opens the channel only when it is given a `review` handler and the agent may edit the folder. Its `reviewHandler` passes the agent only a `ReviewRefused` message. Any other failure (a file system error that names paths) becomes "The app could not do that. Nothing was saved; do not retry in a loop." A timeout says "The app did not answer; check with read_review before asking again".
+`reviewAgent` gives the tools only when it gets a `review` handler and the agent may edit the folder, and the runtime opens the channel only for a slot offered a tool (never a step's; a job's only for tools that are not `tasksOnly`). Its `reviewHandler` passes the agent only a `ReviewRefused` message. Any other failure (a file system error that names paths) becomes "The app could not do that. Nothing was saved; do not retry in a loop." A timeout says "The app did not answer; check with read_review before asking again".
 
 The refusals the agent reads (§4):
 
@@ -282,7 +282,7 @@ The tests that hold this: `packages/blocks/test/ui-server.test.ts` (unchanged), 
 
 - `packages/harness-sdk/src/review.ts`, `review-schema.ts`, `index.ts` (`approve`, `reviewTier`), `core-blocks.ts` (`REVIEW_TOOLS` in the reserved names).
 - `packages/workspace/src/reviews.ts` (record files, locks, own documents, `blobId`, `reviewSummarySync`), `review-requests.ts`, `history.ts` (`readBlob`, the kept prefix), `layout.ts` (`REVIEWS_PREFIX`), `instructions.ts`.
-- `packages/blocks/src/ui-server.ts`, `ui-server-bin.ts`, `launch.ts`; `packages/runtime/src/runtime.ts` (`review`, `reviewHandler`).
+- `packages/blocks/src/ui-server.ts`, `ui-server-bin.ts`, `launch.ts`; `packages/blocks/src/agent-tools.ts`; `packages/runtime/src/runtime.ts` (`instructions`, `agentTools`), `review-agent.ts` (`reviewAgent`, `reviewHandler`).
 - `packages/shell/src/main/reviews.ts`, `review-ipc.ts`, `task-manager.ts` (`reviewRound`, `documentApproved`, `withNotices`), `task-prompts.ts` (`REVIEW_PROMPT`), `task-store.ts` (`notices`), `index.ts`, `packages/shell/src/preload/index.ts`.
 - `packages/ui/src/review-marks.ts`, `ReviewColumn.tsx`, `ReviewBar.tsx`, `ApprovedDiff.tsx`, `FocusMarkers.tsx`, `focus-notices.ts`, `DocumentReader.tsx`, `DocumentCards.tsx`, `ChatView.tsx`; `packages/protocol/src/{client,views}.ts`.
 - `packages/cli/src/run.ts`, `terminal.ts`.

@@ -187,8 +187,8 @@ export function managedSection(opts: {
   references?: ReferenceFolder[];
   settings?: readonly string[];
   material?: boolean;
-  /** The writing guide (document-reader spec D4). Absent: no such part (callers that predate it). */
-  writing?: WritingGuide;
+  /** The caller's parts, after the core's own: each is its lines, led by a blank one. Absent or empty: none (D0). */
+  sections?: readonly (readonly string[])[];
   /** The open scope's linked folders (hatches spec §3.3). Absent or empty: no such part, the old folder rule (D0). */
   linked?: readonly LinkedFolderLine[];
   /** Subagents are allowed for the task: the Subagents part. Absent or false: none (D0). */
@@ -224,7 +224,7 @@ export function managedSection(opts: {
   // Only a harness with material gets this part (material spec D0).
   if (opts.material) lines.push("", t.material, "", ...t.materialRules.map((r) => `- ${r}`));
   lines.push(...subagentLines(opts.subagents));
-  lines.push(...writingLines(opts.writing));
+  for (const section of opts.sections ?? []) lines.push(...section);
   lines.push(MANAGED_END, "");
   return lines.join("\n");
 }
@@ -244,8 +244,8 @@ export interface InstructionsText {
   settings?: readonly string[];
   /** The harness takes material: the Material part. Absent: none (D0). */
   material?: boolean;
-  /** The writing guide; the runtime always passes it (document-reader spec D4). */
-  writing?: WritingGuide;
+  /** The caller's parts (`managedSection`), the writing guide among them. Absent or empty: none (D0). */
+  sections?: readonly (readonly string[])[];
   /** The open scope's linked folders (hatches spec §3.3). Absent or empty: none (D0). */
   linked?: readonly LinkedFolderLine[];
   /** Subagents are allowed (subagent policy D3): the Subagents part. Absent or false: none (D0). */
@@ -259,7 +259,7 @@ function agentsText(opts: InstructionsText): string {
     references: opts.references,
     settings: opts.settings,
     material: opts.material,
-    writing: opts.writing,
+    sections: opts.sections,
     linked: opts.linked,
     subagents: opts.subagents,
   });

@@ -8,7 +8,7 @@ import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { getEngine } from "@humanharness/engines";
 import { claudeResultLine, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
 import { type LoadedHarness, loadHarness } from "@humanharness/harness-sdk";
-import { type RuntimeOptions, createWorkspace } from "../src";
+import { type RuntimeOptions, createWorkspace, reviewAgent } from "../src";
 
 /**
  * The agent side of a harness, as the app builds it: AGENTS.md byte for byte, the `ui` server's tool list for a task and
@@ -17,7 +17,7 @@ import { type RuntimeOptions, createWorkspace } from "../src";
  */
 
 /** The one place that knows how the app asks the runtime for its writing guide and review tools. */
-const appOptions = (_harness: LoadedHarness, review: (request: unknown) => Promise<unknown>): Partial<RuntimeOptions> => ({ review });
+const appOptions = (harness: LoadedHarness, review: (request: unknown) => Promise<unknown>): Partial<RuntimeOptions> => reviewAgent(harness, review);
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const golden = (name: string) => path.join(here, "goldens", name);

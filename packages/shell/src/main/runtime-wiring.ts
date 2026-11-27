@@ -12,6 +12,7 @@ import {
   type SlotRef,
   createRuntime,
   createWorkspace,
+  reviewAgent,
 } from "@humanharness/runtime";
 import { type DataStore, History } from "@humanharness/workspace";
 import type { Job } from "@humanharness/material/light";
@@ -160,9 +161,9 @@ export function createRuntimeWiring(d: RuntimeWiringDeps) {
       ...(harness.material
         ? { material: { request: (request: unknown, slot?: SlotRef) => d.materialRequest(base, request, () => runningTask(slot)), entry: path.join(here, "material-server.js") } }
         : {}),
-      // The agent's review tools in this base, through the person's ReviewService so both sides share its locks. Only
-      // when the agent may edit the folder (review spec D0); the runtime checks the same.
-      ...(harness.permissions.edit === "folder" ? { review: (request: unknown) => d.reviews().agent(base, request) } : {}),
+      // The writing guide, and the review tools in this base through the person's ReviewService, so both sides share its
+      // locks. Tools only when the agent may edit the folder (review spec D0).
+      ...reviewAgent(harness, (request) => d.reviews().agent(base, request)),
       command: cmd.command,
       env: cmd.env,
       references: (await d.workReferences(c, base, true)).map((r) => ({ label: r.label, path: r.path })),

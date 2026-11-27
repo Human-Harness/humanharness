@@ -6,10 +6,10 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { getEngine } from "@humanharness/engines";
 import { type ClaudeScript, claudeResultLine, claudeTextLines, fakeAcpCommand, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
 import { allBlocks, loadHarness, resolveInHarness } from "@humanharness/harness-sdk";
-import { ReviewRefused, managedSection } from "@humanharness/workspace";
+import { ReviewRefused, managedSection, writingLines } from "@humanharness/workspace";
 import { ClaudeCliTransport } from "@humanharness/engines/registry";
 import type { Event } from "../src/events";
-import { type HarnessRuntime, REVIEW_FAILED, type RuntimeOptions, createRuntime, reviewHandler } from "../src/runtime";
+import { type HarnessRuntime, REVIEW_FAILED, type RuntimeOptions, createRuntime, reviewAgent, reviewHandler } from "../src/runtime";
 import type { Session } from "../src/transport";
 
 /** Sockets the runtime opened: a test can make the bridge's close fail and see the rpc's close. */
@@ -88,11 +88,11 @@ describe("createRuntime", () => {
   });
 
   it("without settings, AGENTS.md is the base, today's managed section and the writing guide; a refresh writes nothing", async () => {
-    const { runtime, folder } = await setup({ steps: [] });
     const harness = await loadHarness(FIXTURE);
+    const { runtime, folder } = await setup({ steps: [] }, undefined, reviewAgent(harness));
     const base = fs.readFileSync(resolveInHarness(harness, harness.instructions), "utf8");
     expect(fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8")).toBe(
-      `${base.trimEnd()}\n\n${managedSection({ language: "en", blocks: allBlocks(harness), writing: { kinds: {} } })}`,
+      `${base.trimEnd()}\n\n${managedSection({ language: "en", blocks: allBlocks(harness), sections: [writingLines({ kinds: {} })] })}`,
     );
     expect(await runtime.refreshInstructions()).toBe(false);
   });
@@ -100,7 +100,7 @@ describe("createRuntime", () => {
   it("a harness's declared document kinds reach AGENTS.md (document-reader §4.2)", async () => {
     const harness = await loadHarness(FIXTURE);
     const withKinds = { ...harness, documents: { kinds: { adr: { when: "A decision with real alternatives.", sections: ["Status", "Decision"] } } } };
-    const { folder } = await setup({ steps: [] }, undefined, { harness: withKinds });
+    const { folder } = await setup({ steps: [] }, undefined, { harness: withKinds, ...reviewAgent(withKinds) });
     const agents = fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8");
     expect(agents).toContain("### Document kinds");
     expect(agents).toContain("- `adr`: A decision with real alternatives.");
@@ -535,16 +535,14 @@ describe("createRuntime", () => {
         ],
       },
       undefined,
-      {
-        review: async (request) => {
-          seen.push(request);
-          return { id: "c1" };
-        },
-      },
+      reviewAgent(await loadHarness(FIXTURE), async (request) => {
+        seen.push(request);
+        return { id: "c1" };
+      }),
     );
     await send(r);
-    expect(uiEnv(args()).HH_REVIEW_RPC).toBeTruthy();
-    expect(uiEnv(args()).HH_REVIEW_RPC_TOKEN).toBeTruthy();
+    expect(uiEnv(args()).HH_TOOLS_RPC).toBeTruthy();
+    expect(uiEnv(args()).HH_TOOLS_RPC_TOKEN).toBeTruthy();
     expect(seen).toEqual([expect.objectContaining({ op: "ask", path: "spec.md" })]);
     expect(fs.readFileSync(path.join(folder, "AGENTS.md"), "utf8")).toContain("`ask_in_document`");
     // The review socket closes with the runtime, even when closing the ui bridge before it fails.
@@ -560,16 +558,17 @@ describe("createRuntime", () => {
   });
 
   it("D0: no review channel without a handler, or for an agent that can't edit the folder", async () => {
-    const plain = await setup({ steps: [claudeResultLine(true)] });
+    const plain = await setup({ steps: [claudeResultLine(true)] }, undefined, reviewAgent(await loadHarness(FIXTURE)));
     await send(plain.runtime);
-    expect(uiEnv(plain.args()).HH_REVIEW_RPC).toBeUndefined();
-    expect(uiEnv(plain.args()).HH_REVIEW_RPC_TOKEN).toBeUndefined();
+    expect(uiEnv(plain.args()).HH_TOOLS_RPC).toBeUndefined();
+    expect(uiEnv(plain.args()).HH_TOOLS_RPC_TOKEN).toBeUndefined();
     expect(fs.readFileSync(path.join(plain.folder, "AGENTS.md"), "utf8")).not.toContain("ask_in_document");
     await plain.runtime.close();
-    const readOnly = await setup({ steps: [claudeResultLine(true)] }, undefined, { harness: await loadHarness(READER), review: async () => null });
+    const reader = await loadHarness(READER);
+    const readOnly = await setup({ steps: [claudeResultLine(true)] }, undefined, { harness: reader, ...reviewAgent(reader, async () => null) });
     await send(readOnly.runtime);
-    expect(uiEnv(readOnly.args()).HH_REVIEW_RPC).toBeUndefined();
-    expect(uiEnv(readOnly.args()).HH_REVIEW_RPC_TOKEN).toBeUndefined();
+    expect(uiEnv(readOnly.args()).HH_TOOLS_RPC).toBeUndefined();
+    expect(uiEnv(readOnly.args()).HH_TOOLS_RPC_TOKEN).toBeUndefined();
     expect(fs.readFileSync(path.join(readOnly.folder, "AGENTS.md"), "utf8")).not.toContain("ask_in_document");
   });
 
@@ -586,8 +585,9 @@ describe("createRuntime", () => {
       runtime = undefined;
       return { env: JSON.stringify(env), agents, servers, opened: sockets.rpcOpened - opened };
     };
-    const without = await run({});
-    const withReview = await run({ review: async () => null });
+    const reader = await loadHarness(READER);
+    const without = await run(reviewAgent(reader));
+    const withReview = await run(reviewAgent(reader, async () => null));
     expect(withReview).toEqual(without);
     expect(withReview.opened).toBe(0);
   });

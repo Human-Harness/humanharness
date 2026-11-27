@@ -70,7 +70,7 @@ async function layoutChoices(home: string): Promise<LayoutView["choices"]> {
  * The layout the screen shows: the one picked in `settings.json` (`layouts/<name>.json`, then
  * `harness/layouts/<name>.json`), else `harness/layouts/main.json`, else `core/layouts/main.json`, else the built-in
  * copy. A file that doesn't parse gets `<file>.error` beside it (why, one line per problem) and the next one is used;
- * a valid file deletes its stale `.error`. `problems` are those of the files passed over (and of a pick not found), each led by its path in the home folder.
+ * a valid file deletes its stale `.error`. `problems` are those of the files passed over (and of a pick not found), each led by its path in the home folder. A file with no `overlay` key gets the built-in one (the ⌘K palette); `[]` stays empty.
  */
 export async function shownLayout(home: string): Promise<LayoutView> {
   const { settings, problem } = await readSettings(home);
@@ -94,7 +94,7 @@ export async function shownLayout(home: string): Promise<LayoutView> {
     if (i < 2) pickFound = true;
     if ("layout" in r) {
       await fs.rm(`${file}.error`, { force: true });
-      return view(r.layout, source, name);
+      return view({ overlay: defaultLayout.overlay, ...r.layout } as Layout, source, name);
     }
     await fs.writeFile(`${file}.error`, `${r.problems.join("\n")}\n`).catch((err: unknown) => console.error(`Could not write ${file}.error`, err));
     // In the view each line names its file (the `.error` beside it says only why).

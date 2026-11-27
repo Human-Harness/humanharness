@@ -12,11 +12,13 @@ import { CORE, memoryIo, read, tempRoot } from "./helpers";
 const { root, cleanup } = tempRoot("hh-init-");
 afterAll(cleanup);
 const guide = read(path.join(CORE, "packages", "cli", "guide"), "new-harness.md");
-const files = (dir: string) =>
-  fs
-    .readdirSync(dir, { recursive: true, withFileTypes: true })
-    .filter((e) => e.isFile() && !path.join(e.parentPath, e.name).includes(`${path.sep}node_modules${path.sep}`))
-    .map((e) => path.relative(dir, path.join(e.parentPath, e.name)));
+/** The harness's own files. It never goes into `node_modules`: a recursive read follows the core's link into the whole repo. */
+const files = (dir: string): string[] =>
+  fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    if (e.name === "node_modules") return [];
+    if (e.isDirectory()) return files(path.join(dir, e.name)).map((f) => path.join(e.name, f));
+    return e.isFile() ? [e.name] : [];
+  });
 
 describe("initHarness", () => {
   it("creates a harness repo from the template, linked to the core, with the guide installed", async () => {

@@ -18,8 +18,8 @@ Its ui side is the palette (⌘K), the block `search/palette`, which the default
 (so it shows over Home, the task view and Settings). `SearchHost` listens for ⌘K and `client.search.open()`, `SearchPalette`
 is the dialog, `model.ts` and `ask.ts` shape its rows, and `local.ts` makes the Settings and Actions rows from the window's
 state and block registry. It reads the app through the block's `app` (client, state, `openScope`, `chatContext()`,
-`nav.open`). The intent, focus-setting and Settings tab list it uses stay in `packages/ui`. A layout without the overlay
-entry, or with the mod off, has no palette and no ⌘K.
+`nav.open`). The intent, focus-setting and Settings tab list it uses stay in `packages/ui`. A layout with no `overlay` key gets this
+entry from the app; one whose own `overlay` leaves it out (`[]` too), or the mod off, has no palette and no ⌘K.
 
 ---
 

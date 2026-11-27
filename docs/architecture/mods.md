@@ -121,7 +121,7 @@ Every node may have `id` (lowercase letters, digits and `-`, at most 40), `size`
 4. The root has a child with id `home` and a child with id `work`.
 5. Exactly one `{ "core": "task" }` block in the layout, and it is inside the `work` child.
 
-The shown layout comes from `shownLayout` (`layout.ts`), which the renderer asks through `hh:layout`: `harness/layouts/main.json`, else `core/layouts/main.json`, else the copy built into the app (`default-layout.json`). A file that doesn't parse or break a rule gets `<file>.error` beside it (one problem per line) and the next one is used; a valid file deletes its stale `.error`. The problems of the files passed over come back with the layout and its source. The default layout is a stack of `home` (the Home mod's `home` block) and `work` (the task view).
+The shown layout comes from `shownLayout` (`layout.ts`), which the renderer asks through `hh:layout`: `harness/layouts/main.json`, else `core/layouts/main.json`, else the copy built into the app (`default-layout.json`). A file that doesn't parse or break a rule gets `<file>.error` beside it (one problem per line) and the next one is used; a valid file deletes its stale `.error`. The problems of the files passed over come back with the layout and its source. A shown layout whose root has no `overlay` key gets the built-in one (the palette); `"overlay": []` turns it off, and a list of its own replaces it. The default layout is a stack of `home` (the Home mod's `home` block) and `work` (the task view).
 
 ## UI-only mods
 

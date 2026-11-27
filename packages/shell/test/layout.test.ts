@@ -14,6 +14,8 @@ async function put(file: string, text: string): Promise<void> {
   await fs.writeFile(file, text);
 }
 const exists = (f: string) => fs.access(f).then(() => true, () => false);
+/** What the screen gets for a layout file with no `overlay`: the core's one added. */
+const shown = (l: object) => ({ ...l, overlay: defaultLayout.overlay });
 const custom = { type: "stack", children: [{ type: "block", id: "home", content: { mod: "home", block: "other" } }, { type: "block", id: "work", content: { core: "task" } }] };
 
 beforeEach(async () => {
@@ -34,8 +36,17 @@ describe("shownLayout", () => {
     await put(harnessFile(), JSON.stringify(custom));
     const v = await shownLayout(home);
     expect(v.source).toBe("harness");
-    expect(v.layout).toEqual(custom);
+    expect(v.layout).toEqual(shown(custom));
     expect(v.problems).toEqual([]);
+  });
+  it("an empty overlay stays empty: that turns the palette off on purpose", async () => {
+    await put(harnessFile(), JSON.stringify({ ...custom, overlay: [] }));
+    expect((await shownLayout(home)).layout).toEqual({ ...custom, overlay: [] });
+  });
+  it("a layout's own overlay is kept as it is", async () => {
+    const own = { ...custom, overlay: [{ mod: "hello", block: "hello" }] };
+    await put(harnessFile(), JSON.stringify(own));
+    expect((await shownLayout(home)).layout).toEqual(own);
   });
   it("an invalid harness layout writes .error and the core layout is shown", async () => {
     await put(harnessFile(), JSON.stringify({ type: "row", children: [] }));
@@ -85,7 +96,7 @@ describe("the picked layout (0b2)", () => {
     await put(settingsFile(), JSON.stringify({ layout: "mine" }));
     const v = await shownLayout(home);
     expect(v).toMatchObject({ source: "user", name: "mine", picked: "mine", problems: [] });
-    expect(v.layout).toEqual(mine);
+    expect(v.layout).toEqual(shown(mine));
   });
   it("a picked harness layout wins over main", async () => {
     await put(harnessFile(), JSON.stringify(custom));
@@ -93,7 +104,7 @@ describe("the picked layout (0b2)", () => {
     await put(settingsFile(), JSON.stringify({ layout: "focus" }));
     const v = await shownLayout(home);
     expect(v).toMatchObject({ source: "harness", name: "focus" });
-    expect(v.layout).toEqual(mine);
+    expect(v.layout).toEqual(shown(mine));
   });
   it("an invalid picked layout writes its .error and falls back", async () => {
     await put(harnessFile(), JSON.stringify(custom));

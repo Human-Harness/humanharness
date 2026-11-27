@@ -3,7 +3,11 @@ import type { AgentTool } from "@humanharness/mod-sdk";
 
 /** What the host takes from a mod's agent hooks: the `ui` server must be able to take whatever passes here. */
 
-export const isLines = (v: unknown): v is string[] => Array.isArray(v) && v.every((line) => typeof line === "string");
+/** Why a call of a tool the agent's session still lists is refused. */
+export const modOff = (id: string) => new Error(`Mod "${id}" is off`);
+export const modReloaded = (id: string) => new Error(`Mod "${id}" was reloaded: its tools are in the next session`);
+
+export const isLines =(v: unknown): v is string[] => Array.isArray(v) && v.every((line) => typeof line === "string");
 
 const TOOL_NAME = /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/;
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -12,7 +16,8 @@ const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "obj
 function toolProblem(t: unknown, taken: ReadonlySet<string>): string | null {
   if (!isRecord(t)) return "a tool must be an object";
   const name = t.name;
-  if (typeof name !== "string" || !TOOL_NAME.test(name)) return `"${String(name)}" is not a tool name`;
+  // The MCP SDK keeps its tools in a plain object: a name it already has ("constructor") would stop the whole server.
+  if (typeof name !== "string" || !TOOL_NAME.test(name) || name in Object.prototype) return `"${String(name)}" is not a tool name`;
   if (taken.has(name)) return `the name "${name}" is taken`;
   if (typeof t.description !== "string" || !t.description) return `"${name}" needs a description`;
   if (typeof t.handle !== "function") return `"${name}" needs a handle function`;

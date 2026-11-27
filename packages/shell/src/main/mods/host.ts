@@ -4,7 +4,7 @@ import type { AgentInfo, AgentTool, DailyInfo, Disposer, HoldVerdict, MainCtx, M
 import type { CoreApp, CoreMainCtx, FirstMessageSection } from "@humanharness/mod-sdk/core";
 import type { ModRow } from "@humanharness/protocol";
 import type { PushChannel } from "@humanharness/protocol/channels";
-import { isLines, readAgentTools } from "./agent-answers";
+import { isLines, modOff, modReloaded, readAgentTools } from "./agent-answers";
 import { type ModsSettings, isModOn } from "./config";
 import { coreModOn } from "./core-mods";
 import { guarded } from "./guard";
@@ -479,9 +479,9 @@ export class ModHost {
    * The mods' `agentTools()`, in mod order, none under a `taken` name or an earlier mod's. A throw or a timeout adds
    * nothing; a tool the `ui` server can't take is left out; each is a strike, and a mod it turns off adds nothing.
    */
-  async agentTools(o: AgentInfo, taken: Iterable<string>): Promise<AgentTool[]> {
+  async agentTools(o: AgentInfo, taken: Iterable<string>): Promise<(AgentTool & { mod: string })[]> {
     const names = new Set(taken);
-    const tools: AgentTool[] = [];
+    const tools: (AgentTool & { mod: string })[] = [];
     for (const [r, fn] of this.listeners("agentTools")) {
       if (!r.on) continue;
       const res = await guarded(async () => readAgentTools(await (fn as (o: AgentInfo) => unknown)({ ...o }), names), this.hookMs);
@@ -492,7 +492,7 @@ export class ModHost {
         names.add(tool.name);
         const { name, description, inputSchema, tasksOnly, timeoutError } = tool;
         const extra = { ...(tasksOnly !== undefined ? { tasksOnly } : {}), ...(timeoutError !== undefined ? { timeoutError } : {}) };
-        tools.push({ name, description, inputSchema, ...extra, handle: (args) => this.toolCall(r, fn, tool, args) });
+        tools.push({ mod: r.mod.json.id, name, description, inputSchema, ...extra, handle: (args) => this.toolCall(r, fn, tool, args) });
       }
     }
     return tools;
@@ -503,8 +503,8 @@ export class ModHost {
    */
   private async toolCall(r: Running, hook: Fn, tool: AgentTool, args: Record<string, unknown>): Promise<unknown> {
     // The mod went off, or was loaded again, after the agent's session was opened with this tool.
-    if (!r.on) throw new Error(`Mod "${r.mod.json.id}" is off`);
-    if (!r.hooks.get("agentTools")?.has(hook)) throw new Error(`Mod "${r.mod.json.id}" was reloaded: its tools are in the next session`);
+    if (!r.on) throw modOff(r.mod.json.id);
+    if (!r.hooks.get("agentTools")?.has(hook)) throw modReloaded(r.mod.json.id);
     if (r.mod.shipped === "core") return tool.handle(args);
     const res = await guarded(() => tool.handle(args), this.hookMs);
     await this.count(r, res.ok, res.ok ? undefined : res.reason);

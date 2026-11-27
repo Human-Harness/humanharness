@@ -7,9 +7,10 @@ import { getEngine } from "@humanharness/engines";
 import { claudeResultLine, fakeClaudeCommand, writeScript } from "@humanharness/fake-agent";
 import { loadHarness } from "@humanharness/harness-sdk";
 import type { AgentTool, MainCtx } from "@humanharness/mod-sdk";
-import { type HarnessWorkspace, createWorkspace, reviewAgent } from "@humanharness/runtime";
+import { type HarnessRuntime, type HarnessWorkspace, createRuntime, createWorkspace, reviewAgent } from "@humanharness/runtime";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { type HostDeps, ModHost } from "../../src/main/mods/host";
+import type { ResolvedMod } from "../../src/main/mods/resolve";
 import { withModAgent } from "../../src/main/mods/wiring";
 
 // The mods' agent side (mods-4 T2): `ctx.on.instructions` and `ctx.on.agentTools`, collected by the host from the mods
@@ -22,7 +23,7 @@ const DEMO = path.resolve(here, "../../../../harnesses/demo/harness.config.ts");
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-mod-agent-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
-const open: HarnessWorkspace[] = [];
+const open: Pick<HarnessWorkspace, "close">[] = [];
 afterEach(async () => {
   for (const ws of open.splice(0)) await ws.close();
   vi.restoreAllMocks();
@@ -208,6 +209,9 @@ describe("the mods' agentTools()", () => {
       ["f", { ...tool("f"), inputSchema: { type: "object", properties: { x: { type: "nothing" } } } }, 'agentTools(): "f"'],
       ["g", tool("mine"), 'agentTools(): the name "mine" is taken'],
       ["i", tool("read_review"), 'agentTools(): the name "read_review" is taken'],
+      // The MCP SDK keeps its tools in a plain object: such a name would stop the whole `ui` server.
+      ["j", tool("constructor"), 'agentTools(): "constructor" is not a tool name'],
+      ["k", tool("toString"), 'agentTools(): "toString" is not a tool name'],
     ];
     for (const [id, definition] of bad) h.registerForTest(id, id, (ctx) => void ctx.on.agentTools!(() => [definition as AgentTool, tool(`${id}_ok`)]));
     const names = async () => (await h.agentTools({ canEdit: true }, ["read_review"])).map((t) => t.name);
@@ -239,5 +243,145 @@ describe("the mods' agentTools()", () => {
     await expect(call("user_throws")).rejects.toThrow("user says no");
     expect(h.view().map((m) => m.on)).toEqual([false, true]);
     await expect(call("user_throws")).rejects.toThrow('Mod "user" is off');
+  });
+});
+
+/** A local mod on disk, loaded as the app loads one: its `agentTools()` answers what `tools()` says then. */
+function diskMod(id: string, tools: () => AgentTool[]): ResolvedMod {
+  const dir = fs.mkdtempSync(path.join(root, `mod-${id}-`));
+  const key = `hh-test-mod-${path.basename(dir)}`;
+  (globalThis as Record<string, unknown>)[key] = tools;
+  fs.writeFileSync(path.join(dir, "main.mjs"), `export default { id: ${JSON.stringify(id)}, main(ctx) { ctx.on.agentTools(() => globalThis[${JSON.stringify(key)}]()); } };\n`);
+  return { json: { id, name: id, version: "0.0.0", apiVersion: 1, requires: [], history: false, main: "main.mjs" }, dir, origin: "local", shipped: "local", config: undefined };
+}
+
+async function diskHost(mods: ResolvedMod[]) {
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  const on = Object.fromEntries(mods.map((m) => [m.json.id, true]));
+  const h = new ModHost({ config: { load: async () => ({ on }), saveFailed: async () => {} }, services: () => ({}), notice: vi.fn(), changed: vi.fn(), hookMs: 1_000 });
+  await h.start(mods);
+  return h;
+}
+
+/** `createRuntime`'s one `"main"` slot, which stays open across tasks: ending a task only ends its engine session. */
+async function mainRuntime(config: string, mods: () => ModHost | null) {
+  const harness = await loadHarness(config);
+  const dir = fs.mkdtempSync(path.join(root, "r-"));
+  const argsFile = path.join(dir, "args.json");
+  const rt: HarnessRuntime = await createRuntime({
+    harness,
+    engine: getEngine("claude"),
+    folder: path.join(dir, "Work"),
+    gitdir: path.join(dir, "history.git"),
+    language: "en",
+    command: fakeClaudeCommand(),
+    env: { HH_FAKE_SCRIPT: writeScript(dir, { steps: [claudeResultLine(true)] }), HH_FAKE_ARGS: argsFile },
+    ...withModAgent(reviewAgent(harness, async () => ({ id: "c1" })), harness, mods),
+  });
+  open.push(rt);
+  /** One turn: the engine's session, and the `ui` server it was told to start. */
+  const turn = async () => {
+    const done: unknown[] = [];
+    await rt.send("hi", (e) => void (e.type === "done" && done.push(e))).done;
+    expect(done).toEqual([{ type: "done", ok: true }]);
+    const argv = JSON.parse(fs.readFileSync(argsFile, "utf8")) as string[];
+    const env = (JSON.parse(argv[argv.indexOf("--mcp-config") + 1]) as { mcpServers: { ui: { env: Record<string, string> } } }).mcpServers.ui.env;
+    const flag = argv.includes("--resume") ? "--resume" : "--session-id";
+    return {
+      session: { flag, id: argv[argv.indexOf(flag) + 1] },
+      names: (JSON.parse(env.HH_TOOLS_RPC_DEFS ?? "[]") as { name: string }[]).map((d) => d.name),
+      call: (name: string, args: Record<string, unknown> = { word: "x" }) => callRpc({ path: env.HH_TOOLS_RPC, token: env.HH_TOOLS_RPC_TOKEN }, { tool: name, args }),
+    };
+  };
+  return { rt, turn };
+}
+
+const CORE = ["ask_in_document", "reply_to_comment", "read_review"];
+
+describe("the mods' tools in a slot that stays open across tasks", () => {
+  it("a mod turned off and on, reloaded, or newly added is in the next session's tools", async () => {
+    let word = "one";
+    const m = diskMod("m", () => {
+      const now = word;
+      return [tool("m_say", { handle: () => now })];
+    });
+    const h = await diskHost([m]);
+    const { rt, turn } = await mainRuntime(REVIEWER, () => h);
+    const first = await turn();
+    expect(first.names).toEqual([...CORE, "m_say"]);
+
+    // Off and on in the open session: refused until the next one, which has it again.
+    await h.set("m", false);
+    await h.set("m", true);
+    await expect(first.call("m_say")).rejects.toThrow('Mod "m" was reloaded: its tools are in the next session');
+    // The same session goes on with the same list.
+    const resumed = await turn();
+    expect(resumed.session).toEqual({ flag: "--resume", id: first.session.id });
+    await expect(resumed.call("m_say")).rejects.toThrow("its tools are in the next session");
+    await rt.endSession();
+    const second = await turn();
+    expect(second.session.flag).toBe("--session-id");
+    expect(second.session.id).not.toBe(first.session.id);
+    expect(second.names).toEqual([...CORE, "m_say"]);
+    await expect(second.call("m_say")).resolves.toBe("one");
+
+    // Reloaded after an edit: the next session calls the new handler.
+    word = "two";
+    await h.reload("m", m);
+    await expect(second.call("m_say")).rejects.toThrow("its tools are in the next session");
+    await rt.endSession();
+    await expect((await turn()).call("m_say")).resolves.toBe("two");
+
+    // Added while the slot is open.
+    await h.add(diskMod("late", () => [tool("late_say", { handle: () => "late" })]));
+    await h.set("late", true);
+    await rt.endSession();
+    const third = await turn();
+    expect(third.names).toEqual([...CORE, "m_say", "late_say"]);
+    await expect(third.call("late_say")).resolves.toBe("late");
+    await expect(third.call("read_review", { path: "a.md" })).resolves.toEqual({ id: "c1" });
+
+    // Turned off: gone from the next session, and the turn after goes on in that session.
+    await h.set("late", false);
+    await rt.endSession();
+    const fourth = await turn();
+    expect(fourth.names).toEqual([...CORE, "m_say"]);
+    expect((await turn()).session).toEqual({ flag: "--resume", id: fourth.session.id });
+  });
+
+  it("the first mod tool opens the channel for the next session, and the last one gone closes it", async () => {
+    let mods: ModHost | null = null;
+    const { rt, turn } = await mainRuntime(DEMO, () => mods);
+    expect((await turn()).names).toEqual([]);
+    mods = await diskHost([diskMod("m", () => [tool("m_say", { handle: () => "hello" })])]);
+    await rt.endSession();
+    const second = await turn();
+    expect(second.names).toEqual(["m_say"]);
+    await expect(second.call("m_say")).resolves.toBe("hello");
+    await mods.set("m", false);
+    await rt.endSession();
+    expect((await turn()).names).toEqual([]);
+    await expect(second.call("m_say")).rejects.toThrow();
+  });
+
+  it("after the host is built again, the open session's tools of mods that are still on keep working", async () => {
+    let schema: Record<string, unknown> = OBJECT;
+    const kept = diskMod("kept", () => [tool("kept_say", { handle: () => "kept" })]);
+    const changed = diskMod("changed", () => [tool("changed_say", { inputSchema: schema, handle: () => "changed" })]);
+    const gone = diskMod("gone", () => [tool("gone_say", { handle: () => "gone" })]);
+    const old = await diskHost([kept, changed, gone]);
+    let h: ModHost | null = old;
+    const { turn } = await mainRuntime(DEMO, () => h);
+    const task = await turn();
+    // As restartModHost: the old host stops, a new one starts from the mods as they are now.
+    await old.stop();
+    schema = { type: "object", properties: {} };
+    // Another mod takes the gone one's tool name: its calls never reach it.
+    h = await diskHost([kept, changed, diskMod("other", () => [tool("gone_say", { handle: () => "other" })])]);
+    await expect(task.call("kept_say")).resolves.toBe("kept");
+    await expect(task.call("changed_say")).rejects.toThrow('Mod "changed" was reloaded: its tools are in the next session');
+    await expect(task.call("gone_say")).rejects.toThrow('Mod "gone" is off');
+    h = null;
+    await expect(task.call("kept_say")).rejects.toThrow('Mod "kept" is off');
   });
 });

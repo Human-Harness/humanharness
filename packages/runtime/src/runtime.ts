@@ -35,8 +35,9 @@ export interface RuntimeOptions {
   instructions?: () => string[][] | Promise<string[][]>;
   /**
    * The caller's tools on the `ui` server of task and job slots (a job never gets the `tasksOnly` ones), all answered by
-   * its one handler over one channel; a function is asked as each of those slots opens. Absent, or no definitions: no
-   * tools and no channel (D0).
+   * its one handler over one channel. A value is each slot's from its opening; a function is asked in the first turn of
+   * each engine session (a new slot's, and the one after `endSession`), so a slot that stays open gets the tools as
+   * they are then. Absent, or no definitions: no tools and no channel (D0).
    */
   agentTools?: AgentToolSet | (() => AgentToolSet | undefined | Promise<AgentToolSet | undefined>);
   /**

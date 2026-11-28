@@ -14,7 +14,8 @@ export function DocumentCards({
 }: {
   cards: DocumentCard[];
   missing: ReadonlySet<string>;
-  onOpen: (card: DocumentCard) => void;
+  /** Absent: nothing opens files, and the cards do nothing. */
+  onOpen?: (card: DocumentCard) => void;
   reviews?: ReadonlyMap<string, ReviewSummary | null>;
 }) {
   const { t } = useTranslation();
@@ -27,10 +28,10 @@ export function DocumentCards({
             <button
               type="button"
               className={gone ? "hh-doc-card hh-doc-card-missing" : "hh-doc-card"}
-              aria-disabled={gone || undefined}
+              aria-disabled={gone || !onOpen || undefined}
               title={gone ? t("reader.moved") : c.path}
               onClick={() => {
-                if (!gone) onOpen(c);
+                if (!gone) onOpen?.(c);
               }}
             >
               <span className="hh-doc-card-title">{c.title}</span>

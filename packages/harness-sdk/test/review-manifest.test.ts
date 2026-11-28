@@ -27,7 +27,7 @@ describe("approve on a phase", () => {
 });
 
 describe("reviewTier on a kind", () => {
-  const kinds = (reviewTier: unknown) => ({ ...base, documents: { kinds: { spec: { when: "A spec", sections: ["Scope"], reviewTier } } } }) as HarnessInput;
+  const kinds = (reviewTier: unknown) => ({ ...base, mods: { documents: { kinds: { spec: { when: "A spec", sections: ["Scope"], reviewTier } } } } }) as HarnessInput;
   it("takes a tier and refuses anything else", () => {
     expect(() => defineHarness(kinds("deep"))).not.toThrow();
     expect(() => defineHarness(kinds(undefined))).not.toThrow();

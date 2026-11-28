@@ -1,0 +1,268 @@
+[
+  {
+    "name": "show_choices",
+    "description": "Ends every answer: offers the person up to 4 ways to continue. `label` is what the person reads. An option with `followUp` stays on this topic (the app sends that text as the person's next message); `action` starts another topic by its id; `next: true` moves on to the next topic of the guided path. If an option has several, the app uses `action`, then `next`, then `followUp`; an option with only a `label` is a follow-up whose text is its label.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "options": {
+          "minItems": 1,
+          "maxItems": 4,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 160
+              },
+              "followUp": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              },
+              "action": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]*$"
+              },
+              "next": {
+                "type": "boolean",
+                "const": true
+              }
+            },
+            "required": [
+              "label"
+            ]
+          }
+        }
+      },
+      "required": [
+        "options"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "save_note",
+    "description": "Saves what this topic made clear, only when the app asks you to close the topic. Write the note in English. The app writes it into the folder: never write it yourself. `summary`: at most 5 short key points; `decisions`: what was settled; `files`: paths that back the summary; `open`: questions left open.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "summary": {
+          "minItems": 1,
+          "maxItems": 5,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 400
+          }
+        },
+        "decisions": {
+          "maxItems": 10,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 400
+          }
+        },
+        "files": {
+          "maxItems": 20,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          }
+        },
+        "open": {
+          "maxItems": 10,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 400
+          }
+        }
+      },
+      "required": [
+        "title",
+        "summary",
+        "decisions",
+        "files",
+        "open"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "show_note",
+    "description": "Shows a note with a title and a body to the user.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "body": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "body"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "update_progress",
+    "description": "Updates the progress of the session, from 0 to 100.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "percent": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        }
+      },
+      "required": [
+        "percent"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "ask_in_document",
+    "description": "Asks the person about a passage of a Markdown document in their folder. `quote`: the passage's exact text; it must occur in the file (the first match is used, or the first under `heading`, a heading's slug such as `scope`). `options`: 2 to 5, each with a short `label` and the full `text` that replaces the passage when the person picks it; one option may keep the passage as it is. `blocking: true` only when the document can't be approved without an answer. The person answers in the reader; custom answers come in the next review round.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "maxLength": 50000
+        },
+        "quote": {
+          "type": "string",
+          "maxLength": 50000
+        },
+        "heading": {
+          "type": "string",
+          "maxLength": 50000
+        },
+        "question": {
+          "type": "string",
+          "maxLength": 50000
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "maxLength": 50000
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 50000
+              }
+            },
+            "required": [
+              "label",
+              "text"
+            ]
+          }
+        },
+        "blocking": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "path",
+        "quote",
+        "question",
+        "options"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "reply_to_comment",
+    "description": "Answers a review comment or question by its `id` (c1, c2…) after a review round. `resolve: true` when it is done; `false` when you ask something back.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "maxLength": 50000
+        },
+        "id": {
+          "type": "string",
+          "maxLength": 50000
+        },
+        "reply": {
+          "type": "string",
+          "maxLength": 50000
+        },
+        "resolve": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "path",
+        "id",
+        "reply",
+        "resolve"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "read_review",
+    "description": "Reads a document's review: the comments and questions not resolved, their answers, and whether the document is approved, or changed since it was.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "maxLength": 50000
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  }
+]

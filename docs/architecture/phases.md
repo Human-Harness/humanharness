@@ -15,7 +15,7 @@ An action declares `phases` (1 to 12), in order. Each one has:
 - `approve` (optional): a glob of documents relative to the folder, such as `specs/*.md`. When the person approves a matching document while the task waits in this part, the task moves to the next part (below).
   - `*` and `?` match within one path part, and `**` across parts. Case is ignored.
   - No `[`, `]`, `{` or `}`, no backslash, not absolute, no `..`, not under `.harness/`, ends in `.md`, at most 200 characters.
-  - It does nothing on the last part or a `close` part. See `reviews.md`.
+  - It does nothing on the last part or a `close` part. See `packages/mods/documents/README.md`.
 - `expects` (optional): 1 to 10 tools of the harness (`agent: "call"` ones) the agent should call in this part. When the task leaves the part, or closes in it, each one it didn't call counts as a miss: an `expects-miss` row in `usage.jsonl` and a line "Expected <tool> in <label>: not called" in the chat. Nothing else happens (see "Expects" below).
 
 The checks are in the manifest schema (`defineHarness` and `loadHarness` refuse them, `check` lists them as `schema` with their paths): unique ids, `close` only on the last part, a list of `modes` only on an action with modes and each of them one of its modes. `auto` is allowed on any part, the last one included: on the close part it means the agent's "done" closes the task at once. `check` adds `brief-missing` for a phase brief that is missing or empty.

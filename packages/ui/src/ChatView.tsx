@@ -20,7 +20,6 @@ import {
   type ModeChoice,
   type ModeSwitch,
   type NoteView,
-  type ReaderPrefs,
   type RespondResult,
   type ReviewSummary,
   type SearchCommandId,
@@ -33,12 +32,10 @@ import {
   partsOf,
 } from "./client";
 import { DocumentContext, type DocumentHost } from "./documents-context";
-import { DocumentReader, type ReaderTarget } from "./DocumentReader";
 import { ErrorCard, isFixable, problemError } from "./ErrorCard";
 import { ToolCallLines } from "./tools/ToolCallLine";
-import { FileTimelineSplit } from "./FileTimelineSplit";
 import { FlowSide } from "./FlowSide";
-import { type Paused, NO_PAUSED, countPaused, pausedSummary } from "./focus-notices";
+import { SidePanel, useReaderSlot } from "./open-file";
 import { SlotBoundary } from "./layout/BlockBoundary";
 import { type AppValue, useOptionalApp } from "./layout/app";
 import { useBlocks } from "./layout/registry";
@@ -237,42 +234,15 @@ export function ChatView({
   const [showHistory, setShowHistory] = useState(false);
   /** The past task search asked the History panel to open at (search spec §3). */
   const [historyTask, setHistoryTask] = useState<string | undefined>(undefined);
-  /** A file's timeline outside the reader: a non-`.md` file or a deleted `.md`, from the History panel (file-timeline spec §6.2, Q10). */
-  const [timelineFile, setTimelineFile] = useState<string | null>(null);
   const [notesPage, setNotesPage] = useState<{ open?: string; task?: boolean } | null>(null);
   /** The context panel is open (context-panel spec §5.1); it shares the reader's slot. */
   const [contextWanted, setContextOpen] = useState(false);
+  const blocks = useBlocks();
   /** The context panel a mod registered (`context-panel/panel`); without one there is no "Open context" and no panel. */
-  const ContextBlock = useBlocks().get("context-panel", "panel");
+  const ContextBlock = blocks.get("context-panel", "panel");
   const contextOpen = contextWanted && ContextBlock !== undefined;
   /** The meter that opened the context panel: it gets focus back when the panel closes. */
   const contextOpener = useRef<HTMLElement | null>(null);
-  /** The document reader beside the chat (document-reader spec §5); null: closed. Kept in state: a stable target. */
-  const [reader, setReader] = useState<ReaderTarget | null>(null);
-  /** Every open gets a new nonce: the same document at the same anchor opened again goes there again. */
-  const readerOpens = useRef(0);
-  /** What had focus when the reader opened from the chat (a card, a link): it gets focus back when the reader closes. */
-  const readerOpener = useRef<HTMLElement | null>(null);
-  /** Slim (the setup screen) shows no reader: nothing opens one there. */
-  const slimRef = useRef(slim);
-  slimRef.current = slim;
-  const showReader = useCallback((target: Omit<ReaderTarget, "nonce">) => {
-    if (slimRef.current) return;
-    const active = document.activeElement;
-    // A link inside the reader keeps the first opener.
-    if (active instanceof HTMLElement && active !== document.body && !active.closest(".hh-reader")) readerOpener.current = active;
-    // A file's timeline panel would cover the reader; the context panel holds its slot.
-    setTimelineFile(null);
-    setContextOpen(false);
-    setReader({ ...target, nonce: ++readerOpens.current });
-  }, []);
-  const [readerFull, setReaderFull] = useState(false);
-  /** Focus mode (review spec §6.2): the reader alone, in one quiet column; the turn's end and its notices wait. */
-  const [focus, setFocus] = useState(false);
-  const focusRef = useRef(false);
-  /** What focus mode held back, told in one line on leaving. */
-  const paused = useRef<Paused>(NO_PAUSED);
-  const [readerPrefs, setReaderPrefs] = useState<ReaderPrefs>(state.config.reader ?? {});
   /** Card paths that are no longer there (struck through). */
   const [missingDocs, setMissingDocs] = useState<ReadonlySet<string>>(() => new Set());
   /** Bumped to check the cards' documents again (the window got focus, the reader found one missing). */
@@ -326,6 +296,22 @@ export function ChatView({
   const preflightOpener = useRef<HTMLElement | null>(null);
   const chatRef = useRef<HTMLElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  /** The reader's slot: how files open, a mod's panel and focus (quiet) mode. */
+  const side = useReaderSlot({
+    client,
+    registry: blocks,
+    slim: !!slim,
+    review: state.review === true,
+    t,
+    composer: inputRef,
+    setContextOpen,
+    onSummary: (line) => {
+      dispatch({ type: "notice", text: line, at: new Date().toISOString() });
+      setNotice(line);
+      setAnnouncement(line);
+    },
+  });
+  const { close: closeReader } = side;
   /** Bumped after a restore: mods' pieces read their state again, beside the state main pushes then. */
   const [refresh, setRefresh] = useState(0);
   // What the running plugins draw (plugins part 2): only with `state.plugins`, never in slim mode (D0).
@@ -405,8 +391,8 @@ export function ChatView({
     [components, state.inputs, state.modes],
   );
   const stale = useMemo(() => ({ ...all, choices: StaleChoices, ...(state.modes ? { recommend_mode: StaleRecommend } : {}) }), [all, state.modes]);
-  /** Opens a document in the reader (a `.md` link, a card, the harness's own UI). */
-  const openDoc = useCallback((path: string, anchor?: string) => showReader({ path, ...(anchor ? { anchor } : {}) }), []);
+  /** Opens a document (a `.md` link, a card, the harness's own UI). */
+  const openDoc = useCallback((path: string, anchor?: string) => side.open({ path, ...(anchor ? { anchor } : {}) }), []);
   const documentKinds = state.documents?.kinds;
   // Memoised: a new host on every streaming redraw would reload the chat's local images.
   const documentHost = useMemo<DocumentHost>(
@@ -476,7 +462,7 @@ export function ChatView({
     // The harness's own UI may open a document (`client.openDocument`): listened to from the start. Its path is
     // untrusted input, so only a string opens the reader (which checks it again), and only a string anchor is kept.
     const offDocs = client.onOpenDocument((p, anchor) => {
-      if (typeof p === "string" && p) showReader({ path: p, ...(typeof anchor === "string" && anchor ? { anchor } : {}) });
+      if (typeof p === "string" && p) side.open({ path: p, ...(typeof anchor === "string" && anchor ? { anchor } : {}) });
     });
     return () => {
       offTasks();
@@ -486,35 +472,6 @@ export function ChatView({
       offDocs();
     };
   }, [client]);
-
-  const setFocusMode = useCallback(
-    (on: boolean, path?: string) => {
-      const was = focusRef.current;
-      focusRef.current = on;
-      setFocus(on);
-      client.focus.set(on && path ? { on: true, path } : { on: false });
-      if (!on && was) {
-        const line = pausedSummary(t, paused.current);
-        paused.current = NO_PAUSED;
-        if (line) {
-          dispatch({ type: "notice", text: line, at: new Date().toISOString() });
-          setNotice(line);
-          setAnnouncement(line);
-        }
-      }
-    },
-    [client, t],
-  );
-  // `client.documents.focus(path)` from a harness view: only where the review exists (D0), never on the setup screen.
-  useEffect(
-    () =>
-      client.documents.onFocus((p) => {
-        if (!state.review || slimRef.current || typeof p !== "string" || !p) return;
-        showReader({ path: p });
-        setFocusMode(true, p);
-      }),
-    [client, state.review, showReader, setFocusMode],
-  );
 
   // Flow mode, once the conversation and the tasks are known: a task still open shows its own entries.
   useEffect(() => {
@@ -608,11 +565,9 @@ export function ChatView({
     // "Working…" is announced by the status row itself; clearing lets the final answer be announced afresh.
     if (chat.live && !wasLive.current) setAnnouncement("");
     if (!chat.live && wasLive.current) {
-      if (focusRef.current) {
-        // Focus mode holds the turn's end: no composer focus, nothing read out; it is counted for the summary.
-        // The task's "waiting" comes after `done` (the note is saved first): it is counted below, on its own.
-        paused.current = countPaused(paused.current, { quota: chat.entries.at(-1)?.error?.code === "out-of-quota" });
-      } else {
+      // Focus mode holds the turn's end: no composer focus, nothing read out; it is counted for the summary.
+      // The task's "waiting" comes after `done` (the note is saved first): it is counted below, on its own.
+      if (!side.hold({ quota: chat.entries.at(-1)?.error?.code === "out-of-quota" })) {
         setAnnouncement(markdownToPlain(chat.entries.findLast((e) => e.role === "assistant" && isReply(e))?.text ?? "", (id) => citationsRef.current?.known?.(id)));
         inputRef.current?.focus();
       }
@@ -625,12 +580,12 @@ export function ChatView({
   // The task waiting for the person while in focus mode waits for the summary too.
   const taskStatus = tasks.current?.status;
   useEffect(() => {
-    if (focusRef.current && taskStatus === "waiting") paused.current = countPaused(paused.current, { waiting: true });
+    if (taskStatus === "waiting") side.hold({ waiting: true });
   }, [taskStatus]);
   // A phase proposal while in focus mode waits for the summary.
   const proposal = tasks.current?.phaseProposal;
   useEffect(() => {
-    if (focusRef.current && proposal) paused.current = countPaused(paused.current, { proposal: true });
+    if (proposal) side.hold({ proposal: true });
   }, [proposal?.to, proposal?.reason]);
 
   /** A turn runs, is about to, or the task is saving its note (closing, or a checkpoint). */
@@ -1003,8 +958,8 @@ export function ChatView({
         // Focus on the composer, with whatever the person had typed still there (an unsent draft is kept, never
         // cleared): the question is theirs to write and send.
         if (tasks.current) return false;
+        side.dropHistory();
         closeReader();
-        setTimelineFile(null);
         setShowHistory(false);
         setNotesPage(null);
         setContextOpen(false);
@@ -1012,18 +967,18 @@ export function ChatView({
         return true;
       case "open-history":
         if (slim) return false;
+        side.dropHistory();
         closeReader();
         setContextOpen(false);
         setNotesPage(null);
-        setTimelineFile(null);
         setHistoryTask(undefined);
         setShowHistory(true);
         return true;
       case "open-notes":
         if (slim) return false;
+        side.dropHistory();
         closeReader();
         setContextOpen(false);
-        setTimelineFile(null);
         setShowHistory(false);
         setNotesPage({});
         return true;
@@ -1062,10 +1017,10 @@ export function ChatView({
         return true;
       case "history":
         if (slim) return false;
+        side.dropHistory();
         closeReader();
         setContextOpen(false);
         setNotesPage(null);
-        setTimelineFile(null);
         setHistoryTask(intent.task);
         setShowHistory(true);
         return true;
@@ -1082,15 +1037,16 @@ export function ChatView({
       }
       case "document":
         if (slim) return false;
-        showReader({ path: intent.path, ...(intent.anchor ? { anchor: intent.anchor } : {}) });
+        if (!side.canOpen()) return false;
+        openDoc(intent.path, intent.anchor);
         return true;
       case "timeline":
-        if (slim) return false;
+        if (slim || !side.canOpen()) return false;
         // A split view: one at a time, and a page (History) gives way to it.
         closeReader();
         setContextOpen(false);
         setShowHistory(false);
-        setTimelineFile(intent.path);
+        side.open({ path: intent.path, historyOnly: true });
         return true;
       case "draft":
         // D3: the text waits in the composer; nothing is sent until the person sends it.
@@ -1329,44 +1285,19 @@ export function ChatView({
     window.addEventListener("focus", recheckDocs);
     return () => window.removeEventListener("focus", recheckDocs);
   }, [cardKey, recheckDocs]);
-  // Focus goes back once the reader has closed (and the chat shows again, out of full screen): to the card or link
-  // that opened it, else to the composer.
-  const readerOpen = reader !== null;
-  const wasReaderOpen = useRef(false);
-  useEffect(() => {
-    if (wasReaderOpen.current && !readerOpen) {
-      const opener = readerOpener.current;
-      readerOpener.current = null;
-      if (opener?.isConnected && opener.getAttribute("aria-disabled") !== "true") opener.focus();
-      else inputRef.current?.focus();
-    }
-    wasReaderOpen.current = readerOpen;
-  }, [readerOpen]);
   /** The engine's name for an entry's `engine` id, else the configured engine's (the reader's "Written by"). */
   const engineName = (id: unknown): string => state.engines.find((e) => e.id === id)?.name ?? engine;
   const cardsFor = (entry: ChatEntry) => ({
     missing: missingDocs,
-    open: (card: DocumentCard) => showReader({ path: card.path, agent: engineName(entry.engine) }),
+    open: side.canOpen() ? (card: DocumentCard) => side.open({ path: card.path, agent: engineName(entry.engine) }) : undefined,
     ...(canReview && reviewSummaries ? { reviews: reviewSummaries } : {}),
   });
-  const saveReaderPrefs = useCallback(
-    (p: ReaderPrefs) => {
-      setReaderPrefs(p);
-      client.saveConfig({ reader: p }).catch(() => undefined);
-    },
-    [client],
-  );
-  const closeReader = useCallback(() => {
-    setReader(null);
-    setReaderFull(false);
-    if (focusRef.current) setFocusMode(false);
-  }, [setFocusMode]);
-  /** One side panel at a time: the reader, the timeline, the History and notes panels close. */
+  /** One side panel at a time: the reader's slot, the History and notes panels close. */
   const openContext = () => {
     const active = document.activeElement;
     contextOpener.current = active instanceof HTMLElement && active !== document.body ? active : null;
+    side.dropHistory();
     closeReader();
-    setTimelineFile(null);
     setShowHistory(false);
     setNotesPage(null);
     setContextOpen(true);
@@ -1389,8 +1320,7 @@ export function ChatView({
   const openFromContext = (file: string) => {
     setContextOpen(false);
     contextOpener.current = null;
-    if (isMarkdownPath(file) && !slim) showReader({ path: file });
-    else setTimelineFile(file);
+    side.open(isMarkdownPath(file) && !slim ? { path: file } : { path: file, historyOnly: true });
   };
   // The panel belongs to the open task: it closes when the task ends. Ending, or another task's panel taking its
   // place (its key), unmounts what had focus: focus goes back to the meter rather than dropping to the page.
@@ -1402,11 +1332,6 @@ export function ChatView({
     const active = document.activeElement;
     if (contextShown.current && (!active || active === document.body)) focusContextOpener();
   }, [contextTask]);
-  // A link followed in focus mode: the harness's view hears which document is read now.
-  const readerPath = reader?.path;
-  useEffect(() => {
-    if (focusRef.current && readerPath) client.focus.set({ on: true, path: readerPath });
-  }, [client, readerPath]);
   const placeholder = !flow ? t("chat.placeholder") : tasks.current ? t("flow.placeholderTask") : t("flow.placeholderStart");
 
   let preflightText = "";
@@ -1492,9 +1417,9 @@ export function ChatView({
   useEffect(() => {
     if (notesRequest === notesSeen.current || slim) return;
     notesSeen.current = notesRequest;
+    side.dropHistory();
     closeReader();
     setContextOpen(false);
-    setTimelineFile(null);
     setShowHistory(false);
     setNotesPage({});
   }, [notesRequest]);
@@ -1579,7 +1504,7 @@ export function ChatView({
     if (!taskPage || taskPage.n === taskPageSeen.current || slim) return;
     taskPageSeen.current = taskPage.n;
     setContextOpen(false);
-    setTimelineFile(null);
+    side.dropHistory();
     setNotesPage(taskPage.page === "notes" ? { task: true } : null);
     setShowHistory(taskPage.page === "history");
   }, [taskPage]);
@@ -1613,7 +1538,7 @@ export function ChatView({
       onStart={startTopic}
       onOpenNote={(slug) => {
         setShowHistory(false);
-        setTimelineFile(null);
+        side.dropHistory();
         setContextOpen(false);
         setNotesPage({ open: slug });
       }}
@@ -1667,7 +1592,7 @@ export function ChatView({
   return (
     <TaskViewContext.Provider value={taskView}>
     <ReviewerName.Provider value={mods.reviewer?.name}>
-    <DocumentContext.Provider value={documentHost}>
+    <DocumentContext.Provider value={side.canOpen() ? documentHost : null}>
       <div className={slim ? "hh-app hh-app-slim" : `hh-app${paged ? " hh-app-paged" : ""}`}>
         {bar &&
           !slim &&
@@ -1683,7 +1608,7 @@ export function ChatView({
             bar.el,
           )}
         <div
-          className={`hh-body${(reader || contextOpen || timelineFile !== null) && !slim ? " hh-with-reader" : ""}${reader && readerFull && !slim ? " hh-reader-full" : ""}${focus && reader && !slim ? " hh-focus" : ""}`}
+          className={`hh-body${(side.filled || contextOpen) && !slim ? " hh-with-reader" : ""}${side.filled && side.readerFull && !slim ? " hh-reader-full" : ""}${side.quiet && side.filled && !slim ? " hh-focus" : ""}`}
         >
           {overlay.open === "path" && hasLeft && (
             <Overlay side="left" id={PATH_ID} name={leftName} closeLabel={t("reader.close")} onClose={overlay.close} autoFocus={overlay.focusIn}>
@@ -1988,22 +1913,19 @@ export function ChatView({
             {startView?.hint && !slim && <p className="hh-composer-hint">{t(startView.hint, { ns: "harness" })}</p>}
           </Main>
           <ModOverlays parts={mods} overlay={overlay} client={client} closeLabel={t("reader.close")} />
-          {reader && !slim && (
-            <DocumentReader
+          {side.panel && !slim && (
+            <SidePanel
+              entry={side.panel}
               client={client}
-              target={reader}
-              kinds={documentKinds}
-              prefs={readerPrefs}
-              onPrefs={saveReaderPrefs}
-              full={readerFull}
-              onFull={setReaderFull}
-              onClose={closeReader}
-              onOpen={openDoc}
-              onMissing={recheckDocs}
-              review={state.review === true}
+              state={state}
               busy={Boolean(chat.live) || closing || checkpoint}
-              focus={focus}
-              onFocus={(on) => setFocusMode(on, reader.path)}
+              full={side.readerFull}
+              onFull={side.setReaderFull}
+              onClose={closeReader}
+              openFile={side.open}
+              onMissing={recheckDocs}
+              quiet={side.quiet}
+              onError={side.panelFailed}
             />
           )}
           {contextOpen && tasks.current && !slim && ContextBlock && (
@@ -2019,21 +1941,6 @@ export function ChatView({
                 }}
               />
             </SlotBoundary>
-          )}
-          {timelineFile !== null && !slim && (
-            <FileTimelineSplit
-              client={client}
-              path={timelineFile}
-              busy={Boolean(chat.live) || closing || checkpoint}
-              onClose={() => {
-                setTimelineFile(null);
-                // Focus lost with the split view goes to the composer, not the page.
-                requestAnimationFrame(() => {
-                  const active = document.activeElement;
-                  if (!active || active === document.body) document.querySelector<HTMLElement>(".hh-composer textarea")?.focus();
-                });
-              }}
-            />
           )}
         </div>
         <div className="hh-sr-only" aria-live="polite">
@@ -2061,8 +1968,7 @@ export function ChatView({
                 closeHistory();
                 setContextOpen(false);
                 // A `.md` that is still there opens in the reader with its timeline; anything else in the timeline split view.
-                if (kind !== "deleted" && isMarkdownPath(file)) showReader({ path: file, timeline: true });
-                else setTimelineFile(file);
+                side.open({ path: file, ...(kind !== "deleted" && isMarkdownPath(file) ? { timeline: true } : { historyOnly: true }) });
               },
             };
             const key = historyTask ?? "history";

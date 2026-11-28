@@ -29,14 +29,15 @@ import type { MaterialService } from "./material";
 import { historyKeep } from "./material-ipc";
 import type { MaterialJobs } from "./material-jobs";
 import { modHistoryIgnores } from "./mods/services";
+import type { ModHost } from "./mods/host";
 import type { ResolvedMod } from "./mods/resolve";
+import { withModAgent } from "./mods/wiring";
 import { engineHold } from "./parallel-config";
 import type { PluginsController } from "./plugins";
 import { baseFor } from "./profile-base";
 import type { ResolvedReference } from "./references";
 import type { RestoreGuard } from "./restore-guard";
 import { lastOpened } from "./restore-guard";
-import type { ReviewService } from "./reviews";
 import type { SettingsController } from "./settings";
 import type { SharedConfigStore } from "./shared-config";
 import type { TaskManager } from "./task-manager";
@@ -66,7 +67,6 @@ export interface RuntimeWiringDeps {
   pluginsCtl(): PluginsController | null;
   settingsCtl(): SettingsController | null;
   toolsHost(): ToolsHost | null;
-  reviews(): Pick<ReviewService, "agent">;
   host(): BoardHost | null;
   single(): { gate: TurnGate; turns: Turns } | null;
   singleParts: WeakMap<HarnessRuntime, { workspace: HarnessWorkspace; slot: SessionSlot }>;
@@ -78,6 +78,8 @@ export interface RuntimeWiringDeps {
   /** The move's folder change has begun: no history is opened until it ends. */
   historyHeld(): boolean;
   resolvedMods(): ResolvedMod[];
+  /** The mod host running now, or null (D0): its mods add to the agent's instructions and tools. */
+  modHost(): ModHost | null;
   pluginLog(message: string, err?: unknown): void;
   dataStoreFor(base: string): DataStore;
   materialRequest(base: string, request: unknown, runningTask: () => Promise<{ id: string; scope: string } | null>): Promise<unknown>;
@@ -160,9 +162,9 @@ export function createRuntimeWiring(d: RuntimeWiringDeps) {
       ...(harness.material
         ? { material: { request: (request: unknown, slot?: SlotRef) => d.materialRequest(base, request, () => runningTask(slot)), entry: path.join(here, "material-server.js") } }
         : {}),
-      // The agent's review tools in this base, through the person's ReviewService so both sides share its locks. Only
-      // when the agent may edit the folder (review spec D0); the runtime checks the same.
-      ...(harness.permissions.edit === "folder" ? { review: (request: unknown) => d.reviews().agent(base, request) } : {}),
+      // The mods' instructions and agent tools in this base. The documents mod's (the writing guide and the review tools)
+      // come first, as core mods do.
+      ...withModAgent(harness, base, () => d.modHost()),
       command: cmd.command,
       env: cmd.env,
       references: (await d.workReferences(c, base, true)).map((r) => ({ label: r.label, path: r.path })),

@@ -8,14 +8,14 @@ import {
   laterTasks,
   timeAgo,
 } from "@humanharness/protocol";
-import type { InvokeChannel } from "@humanharness/protocol/channels";
 import { isSha } from "./history-view";
 
 /**
  * Every go-back is confirmed here, in main, with a native dialog attached to the window that asked (Marco,
  * 2026-10-28). Harness UI code runs in the same window and JS realm as the core, so a confirmation drawn in the window
- * could be skipped; this one can't. Three go-backs: one file (`hh:fileRestore`), the whole folder (`restore`, the History mod's via `ctx.app.history`) and
- * one task (`restoreTask`, the same). A "Cancel" is data: `{ ok: false, reason: "cancelled" }`, and nothing changes.
+ * could be skipped; this one can't. Three go-backs: one file (a core mod's, `ctx.app.history.restoreFile`), the whole
+ * folder (`restore`, the History mod's via `ctx.app.history`) and one task (`restoreTask`, the same). A "Cancel" is
+ * data: `{ ok: false, reason: "cancelled" }`, and nothing changes.
  */
 
 /** What a go-back dialog is about: the file's version, or the tasks a folder or task go-back undoes. */
@@ -141,24 +141,33 @@ export interface GoBackDeps<S> {
   restorePoint(sha: string): Promise<void>;
   /** The folder back to before the task (index.ts: through the restore guard, which checks the task again). */
   restoreTask(taskId: string): Promise<void>;
-  /** The file timeline's own checks and go-back (FileTimelineService). */
-  file: {
-    restorePrompt(file: unknown, commit: unknown): Promise<FileRestorePromptResult>;
-    restore(file: unknown, commit: unknown): Promise<FileRestoreAnswer>;
-  };
 }
 
-export const GO_BACK_CHANNELS = ["restore", "restoreTask", "hh:fileRestore"] as const satisfies readonly (InvokeChannel | "restore" | "restoreTask")[];
+/** One file go-back's own checks and write (the documents mod's file timeline). */
+export interface GoBackFile {
+  restorePrompt(file: unknown, commit: unknown): Promise<FileRestorePromptResult>;
+  restore(file: unknown, commit: unknown): Promise<FileRestoreAnswer>;
+}
+
+export const GO_BACK_CHANNELS = ["restore", "restoreTask"] as const;
 export type GoBackChannel = (typeof GO_BACK_CHANNELS)[number];
 
 /**
- * The three go-back handlers, each told which window asked. Bad input, an unlisted point and a blocked go-back are
- * refused before any dialog. One dialog at a time: a go-back asked while one is open answers cancelled. A yes is
- * cancelled too when more later tasks appeared while the dialog was open (it would undo what the person never saw).
- * The folder and task go-backs throw on failure as before (the panel says it couldn't); the file go-back answers every
- * failure as data.
+ * The folder and task go-back handlers, each told which window asked. Bad input, an unlisted point and a blocked
+ * go-back are refused before any dialog. One dialog at a time: a go-back asked while one is open answers cancelled. A
+ * yes is cancelled too when more later tasks appeared while the dialog was open (it would undo what the person never
+ * saw). They throw on failure as before (the panel says it couldn't); the file go-back (`createGoBacks().file`) answers
+ * every failure as data.
  */
 export function goBackHandlers<S>(d: GoBackDeps<S>): Record<GoBackChannel, (sender: S, ...args: unknown[]) => Promise<unknown>> {
+  return createGoBacks(d).handlers;
+}
+
+/**
+ * The handlers, and the file go-back with a service of the caller's own (a core mod's, `ctx.app.history.restoreFile`):
+ * all of them under the one dialog lock.
+ */
+export function createGoBacks<S>(d: GoBackDeps<S>) {
   let open = false;
   const confirm = async (sender: S, ask: GoBackAsk): Promise<boolean> => {
     if (open) return false;
@@ -183,7 +192,22 @@ export function goBackHandlers<S>(d: GoBackDeps<S>): Record<GoBackChannel, (send
     const at = own?.entries.find((e) => e.sha === sha)?.date;
     return own && at ? laterTasks(groups, own.taskId, at) : null;
   };
-  return {
+  /** One file's go-back with `service`'s checks and write; every failure is answered as data. */
+  const file = (sender: S, name: unknown, commit: unknown, service: GoBackFile): Promise<FileRestoreAnswer> =>
+    Promise.resolve()
+      .then(async (): Promise<FileRestoreAnswer> => {
+        // The service's checks first (shape, tracked, on the timeline, not busy): a refused go-back asks nothing.
+        const asked = await service.restorePrompt(name, commit);
+        if (!asked.ok) return asked;
+        if (!(await confirm(sender, { kind: "file", prompt: asked.prompt }))) return CANCELLED;
+        // The service checks everything again: the folder may have changed while the dialog was open.
+        return service.restore(name, commit);
+      })
+      .catch((err: unknown) => {
+        console.error("A file go-back failed", err);
+        return { ok: false as const, reason: "failed" as const };
+      });
+  const handlers: Record<GoBackChannel, (sender: S, ...args: unknown[]) => Promise<unknown>> = {
     "restore": async (sender, sha): Promise<GoBackResult> => {
       if (!isSha(sha)) throw new Error("Invalid point");
       const later = pointIn(await d.groups(), sha);
@@ -210,19 +234,6 @@ export function goBackHandlers<S>(d: GoBackDeps<S>): Record<GoBackChannel, (send
       await d.restoreTask(taskId);
       return { ok: true };
     },
-    "hh:fileRestore": (sender, file, commit): Promise<FileRestoreAnswer> =>
-      Promise.resolve()
-        .then(async (): Promise<FileRestoreAnswer> => {
-          // The service's checks first (shape, tracked, on the timeline, not busy): a refused go-back asks nothing.
-          const asked = await d.file.restorePrompt(file, commit);
-          if (!asked.ok) return asked;
-          if (!(await confirm(sender, { kind: "file", prompt: asked.prompt }))) return CANCELLED;
-          // The service checks everything again: the folder may have changed while the dialog was open.
-          return d.file.restore(file, commit);
-        })
-        .catch((err: unknown) => {
-          console.error("A file go-back failed", err);
-          return { ok: false as const, reason: "failed" as const };
-        }),
   };
+  return { handlers, file };
 }

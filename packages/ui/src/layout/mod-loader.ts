@@ -1,5 +1,6 @@
 import type { HarnessClient, ModRow, ModsView } from "../client";
-import type { BlockComponent, BlockRegistry, ComposerReviewer, RowOptions, RowPlace, SettingsTabOptions, Slots, TaskPageOptions } from "./registry";
+import { endQuiet } from "../open-file";
+import type { BlockComponent, BlockRegistry, ComposerReviewer, FileTarget, RowOptions, RowPlace, SettingsTabOptions, Slots, TaskPageOptions } from "./registry";
 
 /** What a mod's `ui` part gets (mod-sdk's `UiCtx`): its id, the way to register a block, and its own main's names. */
 export interface UiCtx {
@@ -21,6 +22,12 @@ export interface UiCtx {
   composer(reviewer: ComposerReviewer): () => void;
   /** A page of the task view (once per mod): a rail entry and a page that takes the work screen. */
   taskPage(o: TaskPageOptions & { page: unknown }): () => void;
+  /** Opens the files the task view opens; the last handler registered counts. */
+  openFile(handler: (target: FileTarget) => void): () => void;
+  /** A panel in the reader's slot, drawn while open (one at a time). */
+  panel(component: unknown): { open(props?: unknown): void; close(): void };
+  /** The task view's quiet mode: the panel alone, with the chat's notices held back. */
+  readonly taskView: { quiet(on: boolean): void };
 }
 /** A built `ui.js`: its default export is the mod's definition. */
 export interface ModModule {
@@ -76,9 +83,33 @@ function uiRun(id: string, mods: Mods, registry: BlockRegistry) {
       e.gone = true;
       e.off?.();
       delete e.off;
+      // Panels come and go with use: what is gone is not kept.
+      const i = entries.indexOf(e);
+      if (i >= 0) entries.splice(i, 1);
     };
   };
   const slot = <K extends keyof Slots>(kind: K, entry: Slots[K]) => add(() => registry.add(kind, entry));
+  /** The panel this ui opened last, and the `ctx.panel` handle that opened it. */
+  let dropPanel: (() => void) | undefined;
+  let panelOwner: object | undefined;
+  const openPanel = (Component: Slots["openPanel"]["Component"], props: unknown) => {
+    const previous = dropPanel;
+    // The new one goes in before the old one goes out: the slot is never empty between them.
+    const drop: () => void = add(() => {
+      const entry: Slots["openPanel"] = { mod: id, Component, props, close: () => drop() };
+      const off = registry.add("openPanel", entry);
+      for (const other of registry.slot("openPanel")) if (other !== entry) other.close();
+      return off;
+    });
+    dropPanel = drop;
+    previous?.();
+  };
+  const quiet = (on: boolean) => {
+    // Leaving ends it, whoever made it quiet.
+    if (!on) return endQuiet(registry);
+    if (registry.slot("quiet").length > 0) return;
+    const drop: () => void = add(() => registry.add("quiet", { mod: id, end: () => drop() }));
+  };
   const ctx: UiCtx = {
     id,
     block: (name, component) => add(() => registry.register(id, name, component as BlockComponent)),
@@ -108,6 +139,21 @@ function uiRun(id: string, mods: Mods, registry: BlockRegistry) {
         taskPages = 0;
       };
     },
+    openFile: (handler) => slot("opener", { mod: id, open: handler }),
+    panel: (component) => {
+      const handle = {
+        open: (props?: unknown) => {
+          panelOwner = handle;
+          openPanel(component as Slots["openPanel"]["Component"], props);
+        },
+        // A handle whose panel was replaced closes nothing.
+        close: () => {
+          if (panelOwner === handle) dropPanel?.();
+        },
+      };
+      return handle;
+    },
+    taskView: { quiet },
     call: (name, payload) => mods.call(id, name, payload),
     on: (name, fn) => add(() => mods.on(id, name, fn)),
   };
@@ -115,7 +161,7 @@ function uiRun(id: string, mods: Mods, registry: BlockRegistry) {
     ctx,
     attach() {
       live = true;
-      for (const e of entries) if (!e.gone && !e.off) e.off = e.attach();
+      for (const e of [...entries]) if (!e.gone && !e.off) e.off = e.attach();
     },
     dispose() {
       dead = true;

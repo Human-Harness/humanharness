@@ -59,7 +59,7 @@ import {
 } from "@humanharness/workspace";
 import { notesIndexParts } from "./notes-index";
 import { INDEX_NOTES_MAX, READS_MAX, START_ITEMS_MAX, type SeenRead, approxTokens, markCompacted, mergeReads, readsOf } from "./context-record";
-import { RoundNotStarted } from "./reviews";
+import { RoundNotStarted } from "./review-round";
 import type { EngineHost, TaskPreset } from "./engine-config/engine-host";
 import {
   CHECKPOINT_PROMPT,

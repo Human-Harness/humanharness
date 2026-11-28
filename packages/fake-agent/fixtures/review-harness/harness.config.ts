@@ -10,7 +10,7 @@ export default defineHarness({
   instructions: "./agent/AGENTS.md",
   permissions: { edit: "folder", exec: false, web: false },
   blocks: {},
-  documents: { kinds: { spec: { when: "A feature's spec.", sections: ["Scope"], reviewTier: "standard" } } },
+  mods: { documents: { kinds: { spec: { when: "A feature's spec.", sections: ["Scope"], reviewTier: "standard" } } } },
   actions: {
     ticket: {
       label: "Ticket",

@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { type ModDefinition, type ModJson, modJsonSchema } from "@humanharness/mod-sdk";
 import { MAIN_SHARED_MODULES, bundleMod } from "@humanharness/mod-sdk/bundle";
 import { writeMainShims } from "@humanharness/shell/mod-shims";
+import { noopServices } from "../mod-ctx";
 import { type KitRoot, rootDir } from "./harness-project";
 
 const MAIN_TIMEOUT_MS = 10_000;
@@ -73,21 +74,14 @@ function fakeMainCtx(id: string, config: unknown, registered: string[]) {
     registered[registered.length] = name;
     return () => undefined;
   };
-  const store = new Map<string, unknown>();
   return {
+    ...noopServices("mod check runs no engine"),
     id,
     config,
-    on: { beforeSend: reg("beforeSend"), turnStart: reg("turnStart"), turnEnd: reg("turnEnd"), taskOpen: reg("taskOpen"), taskClose: reg("taskClose") },
+    on: { beforeSend: reg("beforeSend"), turnStart: reg("turnStart"), turnEnd: reg("turnEnd"), taskOpen: reg("taskOpen"), taskClose: reg("taskClose"), instructions: reg("instructions"), agentTools: reg("agentTools") },
     ipc: (name: string) => reg(`ipc ${name}`)(),
-    engine: { run: async () => ({ ok: false, error: "mod check runs no engine" }) },
-    tasks: { running: async () => null },
-    notes: { titles: async () => [] },
-    storage: { get: async (k: string) => store.get(k), set: async (k: string, v: unknown) => void store.set(k, v) },
-    dataDir: async () => null,
-    notify: () => undefined,
     provide: () => undefined,
     mods: { get: () => undefined },
-    log: () => undefined,
   };
 }
 

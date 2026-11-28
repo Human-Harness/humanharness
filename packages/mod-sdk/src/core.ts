@@ -1,7 +1,7 @@
 // The core-only part of the mod API (minimal-core 1a): what a mod the app ships (`packages/mods/*`) gets beyond `MainCtx`.
 // Not exported from the package's index, so hh.d.ts and the released contract never show it: a harness's or a local
 // mod's ctx has no `app`, and its `push` reaches only its own ui (never an app channel).
-import type { Disposer, MainCtx, ModTokens, TaskRef, Tier } from "./types";
+import type { AgentInfo, Disposer, MainCtx, ModTokens, TaskRef, Tier } from "./types";
 
 /** A model as Settings › Models resolves it: passed back to `sessions.open` as it is. */
 export interface CoreModelProfile {
@@ -77,6 +77,41 @@ export interface CoreContextRecord {
   start: CoreContextItem[];
   startTokens?: number;
   reads: unknown[];
+}
+
+/** The window a call came from. A mod keys what it holds for a window by `id`, and hands the sender back as it is. */
+export interface CoreSender {
+  readonly id: number;
+}
+
+/** The core's restore guard, handed to a mod only after the person's yes: `run` gets the history to write through. */
+export type CoreRestoreGuard = (run: (history: unknown) => Promise<unknown>) => Promise<void>;
+
+/**
+ * A mod's own file go-back, as `ctx.app.history.restoreFile` runs it. The answers are the protocol's
+ * `FileRestorePromptResult` and `FileRestoreAnswer`, typed loosely here.
+ */
+export interface CoreFileRestore {
+  /** The mod's checks (shape, tracked, on the timeline, not busy): `prompt` is what the dialog says. */
+  restorePrompt(file: unknown, commit: unknown): Promise<{ ok: true; prompt: unknown } | { ok: false; reason: string }>;
+  /** The go-back itself, after the yes: it checks again and writes only through `guard`. */
+  restore(file: unknown, commit: unknown, guard: CoreRestoreGuard): Promise<{ ok: true } | { ok: false; reason: string }>;
+}
+
+/** The set-up app's base folder. */
+export interface CoreFolder {
+  base: string;
+  /** The folders a document may be opened under: the base and the open reference folders. Read when asked. */
+  roots(): Promise<string[]>;
+}
+
+/** One round of a document's review: `open` when the open task is the one it belongs to, `new` when a task was opened. */
+export interface CoreReviewRound {
+  path: string;
+  title: string;
+  message: string;
+  scope?: string;
+  tier: Tier;
 }
 
 /** The app's own services a core mod needs (Sidekick's main, moved out of the core). */
@@ -188,6 +223,41 @@ export interface CoreApp {
   readonly history: {
     restorePoint(sha: string): Promise<unknown>;
     restoreTask(id: string, includeShared?: boolean): Promise<unknown>;
+    /**
+     * One file back to `commit`, asked on `sender`'s window. The core runs `service`'s checks, asks (one go-back
+     * dialog at a time, these three together), and only after a yes calls `service.restore` with the restore guard,
+     * which ends with that call. Answers the protocol's `FileRestoreAnswer`; every failure is data.
+     */
+    restoreFile(sender: CoreSender, file: unknown, commit: unknown, service: CoreFileRestore): Promise<unknown>;
+  };
+  /** What the documents mod needs of the app: the folder, its history, the tasks' review rounds. */
+  readonly documents: {
+    /** The harness lets the agent edit the folder: only then does a document have a review. */
+    canEdit(): boolean;
+    /** The harness's document kinds, as `CoreAgentInfo.documentKinds`. */
+    kinds(): Readonly<Record<string, unknown>>;
+    /** Null when the app isn't set up. */
+    folder(): Promise<CoreFolder | null>;
+    /** The folder's local history (`@humanharness/workspace`'s `History`; the mod casts it); null when it has none. */
+    history(): Promise<unknown>;
+    /** The open task's history trailer, to tag a commit with. */
+    trailer(): Promise<unknown>;
+    /** The task whose turn or review is open, with its scope; null when none. */
+    openTask(): Promise<{ id: string; scope: string } | null>;
+    /** A task operation or a turn is under way. */
+    busy(): boolean;
+    /** Runs `read` once the running task operation has ended. */
+    whenSettled<T>(read: () => Promise<T>): Promise<T>;
+    /** Why writes can't run now (a restore, a move, an engine change, the app closing), or null. */
+    blocked(): string | null;
+    /** A review round as the app sends it; rejects when it can't start. */
+    reviewRound(round: CoreReviewRound): Promise<"open" | "new">;
+    /** Closes the review of the document at `path` as approved. */
+    documentApproved(approval: { path: string; task: string | null; reason?: string }): Promise<void>;
+    /** An action's label as a file's timeline names it; null is a question. */
+    actionLabel(id: string | null): string;
+    /** The built diff worker's entry file. */
+    diffWorker(): string;
   };
   /** Writes as the person: their checks, turns-blocked refusals and history commits, as the window's own. */
   readonly person: {
@@ -196,6 +266,14 @@ export interface CoreApp {
     /** A note in `scope`, never over another one, with its history commit. */
     note(o: { scope: string; action?: string; title: string; decision: string }): Promise<void>;
   };
+}
+
+/** What a core mod's `instructions()` and `agentTools()` get. Harness and local mods get `AgentInfo` alone. */
+export interface CoreAgentInfo extends AgentInfo {
+  /** The folder the runtime asking works in. */
+  folder: string;
+  /** The harness's document kinds (the protocol's `DocumentKind` by id); `{}` without. */
+  documentKinds: Readonly<Record<string, unknown>>;
 }
 
 /** A core mod's ctx: `MainCtx`, with a push to the window on an existing app channel (`hh:…`) and the app's services. */
@@ -212,7 +290,9 @@ export type CoreMainCtx<C = undefined> = MainCtx<C> & {
    * the app answers the call itself, with a refusal.
    */
   handle(channel: `hh:${string}`, fn: (...args: unknown[]) => unknown): Disposer;
-  /** `MainCtx.on`, with the hook only a core mod has. */
+  /** `handle`, for a call whose answer depends on who asked: the handler gets the asking window, then the arguments. */
+  handleFrom(channel: `hh:${string}`, fn: (sender: CoreSender, ...args: unknown[]) => unknown): Disposer;
+  /** `MainCtx.on`, with the hooks only a core mod has. */
   readonly on: MainCtx<C>["on"] & {
     /**
      * Called when a task's first message (and a resumed task's) is built, in the pins' slot. A section is added within
@@ -231,6 +311,14 @@ export type CoreMainCtx<C = undefined> = MainCtx<C> & {
     restored(fn: (paths: readonly string[] | null) => void | Promise<void>): Disposer;
     /** A base is gone for good (a folder move left the old one, a profile was forgotten): drop what is keyed by it. */
     baseGone(fn: (base: string) => void | Promise<void>): Disposer;
+    /** The history saved a commit: the base-relative files it touched, or null when it doesn't say which. */
+    historyCommit(fn: (paths: readonly string[] | null) => void | Promise<void>): Disposer;
+    /** Window `senderId` closed or reloaded: drop what was held for it. */
+    windowClosed(fn: (senderId: number) => void | Promise<void>): Disposer;
+    /** The base folder was moved, changed or switched with the profile: what was checked against it no longer holds. */
+    folderChanged(fn: () => void | Promise<void>): Disposer;
+    /** The mod goes (turned off, or the app quits): release what no other moment does. Run at once, never awaited. */
+    dispose?(fn: () => void): Disposer;
   };
   /**
    * Runs `fn` when the base or its data changed under the mod without a task opening or closing: a profile switch or

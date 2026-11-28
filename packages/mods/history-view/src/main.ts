@@ -17,7 +17,10 @@ function taskArgs(payload: unknown): { id: string; includeShared: boolean | unde
 export default defineMod({
   id: "history-view",
   main(base) {
-    const { history } = (base as unknown as CoreMainCtx).app;
+    const { app } = base as unknown as CoreMainCtx;
+    // No app (`humanharness run` loads the mods headless): there is nothing to go back in.
+    if (!app) return;
+    const { history } = app;
     base.ipc("restore", (sha) => {
       if (!isSha(sha)) throw new Error("Invalid commit");
       return history.restorePoint(sha);

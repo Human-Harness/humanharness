@@ -11,14 +11,13 @@ function deps(o: Partial<ScopeStoresDeps> = {}): ScopeStoresDeps {
     baseOf: (c) => c.folder,
     scoped: () => false,
     sendToWindow: () => {},
-    events: () => ({ dataChanged: () => {} }),
+    events: () => ({ dataChanged: () => {}, folderChanged: () => {} }),
     settingsCtl: () => null,
     profilesCtl: () => null,
     setupCtl: () => null,
     materialSvc: () => null,
     tasks: () => ({ currentScope: async () => null, switchScope: async () => {}, view: async () => ({}) }) as never,
     linked_: () => null,
-    documentSessions: { closeAll: () => {} },
     jobsChanged: () => {},
     jobsReady: async () => {},
     kickMaterial: () => {},
@@ -36,6 +35,13 @@ describe("a profile switch arrives", () => {
     const refresh = vi.fn(async () => {});
     await createScopeStores(deps({ modHost: () => ({ refresh }) })).arrivedInProfile();
     expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("says the folder changed, so the documents mod closes the reader's watches", async () => {
+    const order: string[] = [];
+    const events = () => ({ dataChanged: () => {}, folderChanged: () => void order.push("folderChanged") });
+    await createScopeStores(deps({ events })).arrivedInProfile();
+    expect(order).toEqual(["folderChanged"]);
   });
 
   it("without a mod host, nothing (D0)", async () => {

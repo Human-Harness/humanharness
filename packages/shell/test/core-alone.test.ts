@@ -26,7 +26,6 @@ function deps(o: Partial<Deps> = {}): Deps {
   return {
     harness: () => ({ id: "h", name: "H", actions: {}, data: {} }) as never,
     config: () => ({ load: async () => ({}) }) as never,
-    here: main,
     guards: { turnBlocked: () => null } as never,
     quitting: () => false,
     moving: () => null,
@@ -50,7 +49,6 @@ function deps(o: Partial<Deps> = {}): Deps {
     closeRuntime: async () => {},
     arrivedInProfile: async () => {},
     workReferences: async () => [],
-    sendToWindow: () => {},
     ...o,
   };
 }
@@ -77,6 +75,18 @@ describe("the core alone (minimal-core 1a)", () => {
     s.announceCommits(history as never);
     onCommit({ paths: ["a.md"] });
     expect(restored).toHaveBeenCalledWith(["a.md"]);
+  });
+
+  it("a commit reaches a core mod as `historyCommit(paths)` too; a restore alone is no commit", () => {
+    const historyCommit = vi.fn(async () => {});
+    let onCommit: (c: { paths: string[] }) => void = () => {};
+    const history = { onCommit: (fn: typeof onCommit) => ((onCommit = fn), () => {}) };
+    const s = createAppServices(deps({ modHost: () => ({ refresh: async () => {}, historyCommit }) }));
+    s.announceCommits(history as never);
+    onCommit({ paths: ["a.md"] });
+    expect(historyCommit).toHaveBeenCalledWith(["a.md"]);
+    s.afterRestore();
+    expect(historyCommit).toHaveBeenCalledTimes(1);
   });
 
   it("without a mod store, the `sidekick` collection is no collection of the core's", async () => {

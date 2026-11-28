@@ -1,4 +1,6 @@
 {
+  "AgentInfo": "host",
+  "AgentTool": "mod",
   "AppValue": "host",
   "BlockComponent": "mod",
   "BlockContent": "mod",

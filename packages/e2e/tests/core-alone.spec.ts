@@ -25,7 +25,7 @@ const coreLayout = {
   overlay: [{ mod: "search", block: "palette" }],
 };
 
-const modIds = ["context-panel", "history-view", "home", "search", "sidekick", "usage"];
+const modIds = ["context-panel", "documents", "history-view", "home", "search", "sidekick", "usage"];
 /** Search stays on: with Home off, its ⌘K palette is the only way to start a task (a decision for Marco, not this spec). */
 const offIds = modIds.filter((id) => id !== "search");
 

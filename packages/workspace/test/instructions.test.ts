@@ -5,7 +5,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { CORE_BLOCKS, INPUT_CORE_BLOCKS, defineBlock } from "@humanharness/harness-sdk";
 import { getEngine } from "@humanharness/engines";
-import { MANAGED_END, MANAGED_START, managedSection, refreshInstructions, settingsLines, subagentLines, writeInstructions, writingLines } from "../src";
+import { MANAGED_END, MANAGED_START, managedSection, refreshInstructions, settingsLines, subagentLines, writeInstructions } from "../src";
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "hh-"));
 afterAll(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -272,63 +272,13 @@ describe("writeInstructions: plugin sentences (plugins spec §8, Decision 16)", 
   });
 });
 
-describe("writing for the reader (document-reader spec §4)", () => {
-  const GUIDE_START = "### Writing for the reader";
+describe("the caller's sections", () => {
+  const GUIDE = ["", "### Writing for the reader", "", "Write well."];
 
-  it("D0: without `writing` the section is exactly today's", () => {
-    expect(managedSection({ language: "en", blocks })).not.toContain(GUIDE_START);
-  });
-
-  it("the base guide: last part of the section, English, the six callouts and nothing else", () => {
-    const s = managedSection({ language: "es", blocks: {}, writing: { kinds: {} } });
-    expect(s.trimEnd().endsWith(MANAGED_END)).toBe(true);
-    const guide = s.slice(s.indexOf(GUIDE_START), s.indexOf(MANAGED_END));
-    expect(guide).toMatchSnapshot();
-    for (const c of ["NOTE", "TIP", "WARNING", "SUMMARY", "DECISION", "QUESTION"]) expect(guide).toContain(`[!${c}]`);
-    expect([...new Set(guide.match(/\[![A-Z]+\]/g))].sort()).toEqual(["[!DECISION]", "[!NOTE]", "[!QUESTION]", "[!SUMMARY]", "[!TIP]", "[!WARNING]"]);
-    expect(guide).not.toContain("### Document kinds");
-    expect(guide).toContain("`title` always.");
-    expect(guide).not.toContain("`kind`");
-  });
-
-  it("with kinds: each kind's id, when and its template (front-matter, then headings in order)", () => {
-    const s = managedSection({
-      language: "en",
-      blocks: {},
-      writing: {
-        kinds: {
-          adr: { when: "A decision with real alternatives.", sections: ["Status", "Context", "Decision"], status: ["proposed", "accepted", "superseded"] },
-          analysis: { when: "Exploring options before deciding.", sections: ["Context", "Options"] },
-        },
-      },
-    });
-    const kinds = s.slice(s.indexOf("### Document kinds"), s.indexOf(MANAGED_END));
-    expect(kinds).toMatchSnapshot();
-    expect(kinds).toContain("- `adr`: A decision with real alternatives.");
-    expect(kinds).toContain("    status: proposed | accepted | superseded");
-    expect(kinds.indexOf("    ## Status")).toBeLessThan(kinds.indexOf("    ## Decision"));
-    expect(s).toContain("`title` always, and `kind` when one of the kinds below fits.");
-  });
-
-  it("a kind's template is a code block inside its list item, so its headings never render as live headings", () => {
-    const s = managedSection({ language: "en", blocks: {}, writing: { kinds: { adr: { when: "x", sections: ["Status"] } } } });
-    const kinds = s.slice(s.indexOf("### Document kinds"), s.indexOf(MANAGED_END));
-    // The item's content starts at column 2; a code block inside it needs 4 more spaces.
-    for (const line of ["---", "title: …", "kind: adr", "## Status"]) expect(kinds).toContain(`\n      ${line}\n`);
-  });
-});
-
-describe("writing guide: review lines (review spec §4)", () => {
-  it("only with review", () => {
-    const without = writingLines({ kinds: {} });
-    const withReview = writingLines({ kinds: {}, review: true });
-    const added = withReview.filter((l) => !without.includes(l));
-    expect(added).toEqual([
-      "- **Asking about a passage.** Use `ask_in_document`, and give for each option the full text that replaces the passage.",
-      "- **Blocking questions.** Mark a question `blocking` only when the document can't be approved without its answer.",
-      "- **Review rounds.** After a review round, answer every comment with `reply_to_comment`.",
-    ]);
-    expect(withReview.filter((l) => without.includes(l))).toEqual(without);
+  it("D0: without sections the part is not there; with one, it is the section's last part", () => {
+    expect(managedSection({ language: "en", blocks })).not.toContain("### Writing for the reader");
+    const s = managedSection({ language: "es", blocks: {}, sections: [GUIDE] });
+    expect(s.trimEnd().endsWith(`Write well.\n${MANAGED_END}`)).toBe(true);
   });
 });
 
@@ -414,7 +364,7 @@ describe("Subagents part (subagent policy D3)", () => {
   });
 
   it("allowed: the exact contract, at most five lines, inside the managed markers", () => {
-    const s = managedSection({ language: "en", blocks, subagents: true, material: true, writing: { kinds: {} } });
+    const s = managedSection({ language: "en", blocks, subagents: true, material: true, sections: [["", "### Writing for the reader"]] });
     expect(s).toContain(PART.join("\n"));
     expect(subagentLines(true).slice(1)).toEqual(PART);
     // The intro, then at most five contract lines.

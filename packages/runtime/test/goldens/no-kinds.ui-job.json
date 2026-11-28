@@ -1,0 +1,103 @@
+[
+  {
+    "name": "show_choices",
+    "description": "Ends every answer: offers the person up to 4 ways to continue. `label` is what the person reads. An option with `followUp` stays on this topic (the app sends that text as the person's next message); `action` starts another topic by its id; `next: true` moves on to the next topic of the guided path. If an option has several, the app uses `action`, then `next`, then `followUp`; an option with only a `label` is a follow-up whose text is its label.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "save_note",
+    "description": "Saves what this topic made clear, only when the app asks you to close the topic. Write the note in English. The app writes it into the folder: never write it yourself. `summary`: at most 5 short key points; `decisions`: what was settled; `files`: paths that back the summary; `open`: questions left open.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {}
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "show_note",
+    "description": "Shows a note with a title and a body to the user.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "body": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "body"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "update_progress",
+    "description": "Updates the progress of the session, from 0 to 100.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "percent": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        }
+      },
+      "required": [
+        "percent"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  },
+  {
+    "name": "job_result",
+    "description": "Ends this background job with its result: `status` ok, needs-you (name in `action` the action the person should start) or failed, and a one-line `summary`.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "ok",
+            "needs-you",
+            "failed"
+          ]
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "action": {
+          "type": "string",
+          "maxLength": 64
+        }
+      },
+      "required": [
+        "status",
+        "summary"
+      ],
+      "$schema": "http://json-schema.org/draft-07/schema#"
+    },
+    "execution": {
+      "taskSupport": "forbidden"
+    }
+  }
+]

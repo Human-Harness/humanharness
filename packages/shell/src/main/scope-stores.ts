@@ -3,7 +3,6 @@ import { type LoadedHarness, PROFILE_COLLECTION, SETTINGS_COLLECTION, dataCollec
 import type { ConfiguredApp, ScopesView } from "@humanharness/protocol";
 import type { PushChannel } from "@humanharness/protocol/channels";
 import { DataStore, MAIN_SCOPE, ScopeStore, migrateToScopes } from "@humanharness/workspace";
-import type { DocumentSessions } from "./document-sessions";
 import type { LinkedInstructions } from "./scope-access";
 import type { MaterialService } from "./material";
 import { isInsideFolder } from "./profile-base";
@@ -20,14 +19,13 @@ export interface ScopeStoresDeps {
   baseOf(c: { folder: string; profile?: string }): string;
   scoped(): boolean;
   sendToWindow(channel: PushChannel, value: unknown): void;
-  events(): Pick<CoreEvents, "dataChanged">;
+  events(): Pick<CoreEvents, "dataChanged" | "folderChanged">;
   settingsCtl(): SettingsController | null;
   profilesCtl(): Profiles | null;
   setupCtl(): SetupSteps | null;
   materialSvc(): MaterialService | null;
   tasks(): Pick<TaskManager, "currentScope" | "switchScope" | "view">;
   linked_(): { instructions: LinkedInstructions } | null;
-  documentSessions: Pick<DocumentSessions, "closeAll">;
   jobsChanged(): void;
   jobsReady(): Promise<void>;
   kickMaterial(): void;
@@ -139,7 +137,7 @@ export function createScopeStores(d: ScopeStoresDeps) {
     // The old profile's backend too: stopped now, started in the new one once its scopes are settled (below).
     await d.backendLeaveBase();
     // Another profile is another folder: the reader's watches were checked against the old one.
-    d.documentSessions.closeAll();
+    d.events().folderChanged();
     await d.interruptTasks();
     d.settingsCtl()?.forget();
     await d.settingsCtl()?.changed();

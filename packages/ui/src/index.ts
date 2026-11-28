@@ -20,8 +20,6 @@ export { type LanguageControl, useLanguage } from "./language-control";
 export { LegalInEnglish, useLegalLang } from "./EngineOnboarding";
 export { MaterialPanel, type MaterialPanelProps, useMaterial } from "./MaterialPanel";
 export { PluginSlot } from "./plugins/PluginSlot";
-export { FileTimeline, type FileTimelineProps } from "./FileTimeline";
-export { FileDiff, type FileDiffProps, type DiffLayout } from "./FileDiff";
 export type { BlockActions, BlockProps, InputContext, InputProps } from "./Message";
 export { AnswerView, InputForm, type InputFormProps } from "./InputForm";
 export type { StartViewCopy } from "./StartView";
@@ -32,6 +30,7 @@ export { DocumentContext, type DocumentHost } from "./documents-context";
 export { type AppValue, useApp } from "./layout/app";
 // The window runs the ui part of each on, non-core mod (minimal-core 0b2).
 export { type ModLoader, type ModLoaderOptions, type UiCtx as CoreUiCtx, startModLoader } from "./layout/mod-loader";
+export type { FileTarget, PanelProps } from "./layout/registry";
 // A core mod's task-view pieces (minimal-core step 1b): the open task view they act on, and what a reviewer may add.
 export { type TaskViewValue, useTaskView } from "./task-view/context";
 export type { TaskReviewer } from "./task-view/review";
@@ -62,3 +61,7 @@ export { SlotBoundary } from "./layout/BlockBoundary";
 export { useBlocks } from "./layout/registry";
 export { useTasks } from "./parallel/useTasks";
 export type { SearchIntent } from "./search/intent";
+// The reader, the timeline and the diffs (the documents mod) build with these.
+export { HIGHLIGHT_MAX_LINES, highlightCode } from "./highlight";
+export { documentOutline } from "./markdown";
+export { formatSize } from "./sizes";

@@ -65,10 +65,13 @@ async function toolsSocket() {
   return found[0];
 }
 
+/** A caller's tool, so a task slot opens the tools channel. */
+const AGENT_TOOLS = { definitions: [{ name: "ping", description: "Pings.", inputSchema: { type: "object", properties: {} } }], handle: async () => null };
+
 describe("a slot's tools socket closes when its open fails (tools spec §5)", () => {
   it("a later socket failing to open closes the tools socket", async () => {
-    const w = await setup({ review: async () => null });
-    // data (0) and tools (1) open; the review socket (2) fails.
+    const w = await setup({ agentTools: AGENT_TOOLS });
+    // data (0) and tools (1) open; the caller's tools socket (2) fails.
     gate = async (n) => {
       if (n === 2) throw new Error("no socket");
     };

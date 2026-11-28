@@ -1,8 +1,7 @@
-import { RESTORE_POINT, RESTORE_TASK } from "@humanharness/protocol";
+import { type FileRestoreAnswer, RESTORE_POINT, RESTORE_TASK } from "@humanharness/protocol";
 import type { History } from "@humanharness/workspace";
 import type { WebContents } from "electron";
-import type { FileTimelineService } from "./file-timeline";
-import { CANCELLED, type GoBackAsk, goBackHandlers } from "./go-back";
+import { CANCELLED, type GoBackAsk, type GoBackFile, createGoBacks } from "./go-back";
 import { historyView } from "./history-view";
 import { type LinkedHistoryRef, mergeTaskGroups, restoreLinkedTask, restoreTaskWithLinked } from "./linked-restore";
 import type { RestoreGuard } from "./restore-guard";
@@ -32,8 +31,12 @@ export interface HistoryRestoreDeps {
     linkedRunning: (realPath: string) => Promise<{ task: string; paths: ReadonlySet<string> }[]>;
     busy: (id: string) => boolean;
   } | null;
-  fileTimelines: FileTimelineService;
 }
+
+/** A core mod's file go-back: its own checks, and a write that gets the restore guard only after the person's yes. */
+export type FileRestoreService = Pick<GoBackFile, "restorePrompt"> & {
+  restore(file: unknown, commit: unknown, guard: HistoryRestoreDeps["restoreWith"]): Promise<FileRestoreAnswer>;
+};
 
 /**
  * The history restore service (minimal core step 2): the whole-folder and task go-backs as plain calls, for the
@@ -42,7 +45,7 @@ export interface HistoryRestoreDeps {
  * `{ ok: false, reason: "cancelled" }` or, by paths, `{ refused }`; a blocked or invalid call throws, as before.
  */
 export function historyRestores(d: HistoryRestoreDeps) {
-  const { linked_, currentHistory, linkedHistoriesOf, confirmGoBack, restoreWith, afterRestore, restores, undoByPaths, fileTimelines } = d;
+  const { linked_, currentHistory, linkedHistoriesOf, confirmGoBack, restoreWith, afterRestore, restores, undoByPaths } = d;
   const historyGroups = async () => {
     const history = await currentHistory();
     return history ? historyView(await history.tasks()) : [];
@@ -61,7 +64,7 @@ export function historyRestores(d: HistoryRestoreDeps) {
   // Every go-back (one file, the whole folder, one task) asks first with main's native dialog (go-back.ts).
   // Restore commits carry no task: going back may undo several tasks, so it belongs to none of them.
   // A restore changes tracked files with no data event: the settings may have changed.
-  const goBacks = goBackHandlers<WebContents | null>({
+  const { handlers: goBacks, file: fileGoBack } = createGoBacks<WebContents | null>({
     confirm: confirmGoBack,
     blocked: () => d.quitting() || d.tasksBusy() || d.restoreHeld() !== null,
     groups: historyGroups,
@@ -95,7 +98,6 @@ export function historyRestores(d: HistoryRestoreDeps) {
         throw err;
       });
     },
-    file: fileTimelines,
   });
 
   return {
@@ -140,8 +142,25 @@ export function historyRestores(d: HistoryRestoreDeps) {
       afterRestore();
       return { ok: true };
     },
-    /** One file's go-back (the file timeline): asks on `sender`'s window, as before. */
-    fileRestore: goBacks["hh:fileRestore"],
+    /**
+     * One file's go-back through a core mod's `service`, asked on `sender`'s window under the same dialog lock. Only
+     * after a yes does `service.restore` run, with the restore guard, which refuses once that call ended.
+     */
+    restoreFile: (sender: WebContents | null, file: unknown, commit: unknown, service: FileRestoreService): Promise<FileRestoreAnswer> =>
+      fileGoBack(sender, file, commit, {
+        restorePrompt: (f, c) => service.restorePrompt(f, c),
+        async restore(f, c) {
+          let live = true;
+          try {
+            const answer = await service.restore(f, c, (run) => (live ? restoreWith(run) : Promise.reject(new Error("The restore is over"))));
+            // Tracked files changed with no data event, as the core's own file go-back tells the app.
+            if (answer.ok) afterRestore();
+            return answer;
+          } finally {
+            live = false;
+          }
+        },
+      }),
   };
 }
 

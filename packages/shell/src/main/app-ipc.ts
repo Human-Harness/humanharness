@@ -7,9 +7,7 @@ import { flushFileIndexes } from "@humanharness/workspace";
 import { languageHandlers } from "./language-ipc";
 import { chooseModeHandler } from "./mode-ipc";
 import { setPhaseHandler } from "./phase-ipc";
-import { reviewHandlers } from "./review-ipc";
-import { fileHandlers, openPathIpc } from "./file-ipc";
-import { documentIpc } from "./document-ipc";
+import { openPathIpc } from "./open-path-ipc";
 import { registerPluginsIpc } from "./plugin-ipc";
 import { jobsIpc } from "./jobs/jobs-host";
 import { linkedIpcDeps, registerLinkedIpc } from "./linked-ipc";
@@ -60,7 +58,7 @@ export function registerAppIpc(d: LifecycleDeps): void {
       interruptTasks: d.interruptTasks,
       dropRuntime: d.dropRuntime,
       saveConfigPatch: d.saveConfigPatch,
-      documentSessions: d.documentSessions,
+      events: d.events,
       dropDataStoresUnder: d.dropDataStoresUnder,
       settleScopes: d.settleScopes,
       scopesChanged: d.scopesChanged,
@@ -162,7 +160,7 @@ export function registerAppIpc(d: LifecycleDeps): void {
   }
   d.handleAll(dataIpc({ harness: () => d.harness, scopesSettled: d.scopesSettled, harnessUiData: d.harnessUiData, currentHistory: d.currentHistory }));
   // The app channels a core mod answers (Sidekick's, sidekick spec §7): each call goes to the mod host.
-  registerModAppChannels(d.handle, () => d.appMods.state.modHost);
+  registerModAppChannels(d.handleFrom, () => d.appMods.state.modHost);
   // The layout the screen shows (minimal-core spec §5.2).
   d.handle("hh:layout", () => shownLayout(appHome(app.getPath("userData"), d.harness.id)));
   // The person's pick (0b2): written in the home folder's settings.json; the watcher redraws the window too.
@@ -199,16 +197,6 @@ export function registerAppIpc(d: LifecycleDeps): void {
   // The person's pick of a phase (task-phases spec §4.2): the acceptance comes back as data.
   d.handle("hh:setPhase", setPhaseHandler({ quitting: () => d.quitting, blocked: d.turnBlocked, setPhase: (to, task) => d.tasks.setPhase(to, task) }));
   d.handleAll(openPathIpc({ validConfig: d.validConfig, baseOf: d.baseOf, workReferences: d.workReferences, shell }));
-  const reader = documentIpc({ documentRoots: d.documentRoots, documentSessions: d.documentSessions });
-  d.handle("hh:readDocument", reader["hh:readDocument"]);
-  d.handle("hh:readImage", reader["hh:readImage"]);
-  d.handle("hh:documentsExist", reader["hh:documentsExist"]);
-  d.handleFrom("hh:watchDocument", reader["hh:watchDocument"]);
-  d.handleFrom("hh:unwatchDocument", reader["hh:unwatchDocument"]);
-  // Reviews (review spec §5.6): every answer is data; nothing reaches the service unless the agent may edit the folder (D0).
-  d.handleAll(reviewHandlers(d.reviews, () => d.harness.permissions.edit === "folder"));
-  // File timelines (file-timeline spec §6.3): every harness (Q1); every answer is data.
-  d.handleAll(fileHandlers(d.fileTimelines));
   // Language on demand (plan 5b): every answer is data; the state is pushed on hh:language.
   if (d.translation) d.handleAll(languageHandlers(d.translation));
   // Cancels the turn and stops the task operation (a closing turn never goes on to the next task).
@@ -227,11 +215,9 @@ export function registerAppIpc(d: LifecycleDeps): void {
     afterRestore: d.afterRestore,
     restores: d.restores,
     undoByPaths: d.undoByPaths,
-    fileTimelines: d.fileTimelines,
   });
   d.historyRestores = restores;
   const history = historyIpc({ restores, homeHistory: () => d.appMods.state.homeHistory, linked_: d.linked_, linkedHistoriesOf: d.linkedHistoriesOf });
-  d.handleFrom("hh:fileRestore", history["hh:fileRestore"]);
   d.handle("hh:historyTasks", history["hh:historyTasks"]);
   d.handle("hh:homeHistory", history["hh:homeHistory"]);
   d.handle("hh:homeUndo", history["hh:homeUndo"]);
@@ -290,7 +276,6 @@ export function registerAppIpc(d: LifecycleDeps): void {
       folderBusy: d.hold.folderBusy,
       plainTasks: d.plainTasks,
       restores: d.restores,
-      documentSessions: d.documentSessions,
       events: d.events,
       validConfig: d.validConfig,
       baseOf: d.baseOf,

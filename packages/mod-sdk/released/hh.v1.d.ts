@@ -224,6 +224,25 @@ declare module "@humanharness/mod-sdk/_internal/src/types" {
       text: string;
       error?: string;
   }
+  /** What the agent hooks are told about the harness the agent works in. */
+  export interface AgentInfo {
+      /** The agent may edit the work folder. */
+      canEdit: boolean;
+  }
+  /** A tool the mod adds to the agent's `ui` server, beside the harness's blocks. */
+  export interface AgentTool {
+      /** What the agent calls: letters, digits, `_` and `-`; never a block's, the app's or an earlier mod's tool name. */
+      name: string;
+      description: string;
+      /** The arguments' JSON Schema, of `type: "object"`, in the subset a plugin's schemas take. Undeclared keys are dropped. */
+      inputSchema: Record<string, unknown>;
+      /** Only in a task's session: a background job can't ask the person. */
+      tasksOnly?: boolean;
+      /** What the agent reads when the app does not answer in time. */
+      timeoutError?: string;
+      /** Answers a call: the agent reads the result as JSON; a thrown error's message reaches it as it is. */
+      handle(args: Record<string, unknown>): unknown;
+  }
   export interface MainCtx<C = undefined> {
       readonly id: string;
       /** The harness's `mods.<id>`, parsed by the mod's schema; undefined without a schema. */
@@ -241,6 +260,14 @@ declare module "@humanharness/mod-sdk/_internal/src/types" {
           daily(fn: (d: DailyInfo) => void | Promise<void>): Disposer;
           /** The app is quitting; before the disposers run. */
           close(fn: () => void | Promise<void>): Disposer;
+          /**
+           * Lines added to the agent's instructions (AGENTS.md) as one section after the app's own, in mod order; [] adds
+           * none. Asked each time the instructions are written. The app always gives it, and `agentTools`; a ctx made only
+           * to check or test a mod may not.
+           */
+          instructions?(fn: (o: AgentInfo) => string[] | Promise<string[]>): Disposer;
+          /** Tools added to the agent's `ui` server; asked each time an agent session is opened. */
+          agentTools?(fn: (o: AgentInfo) => AgentTool[] | Promise<AgentTool[]>): Disposer;
       };
       /**
        * A channel the mod's own ui calls (0b wires the ui side). A core mod may also name an app channel (`hh:…`): the
@@ -366,6 +393,39 @@ declare module "@humanharness/mod-sdk/_internal/src/types" {
           title: string;
           page: unknown;
       }): Disposer;
+      /**
+       * Opens the files the task view opens: a `.md` link, a card, a History or context panel link, `client.openDocument`,
+       * `client.documents.focus` and search. One handler counts: a second registration replaces it, and its disposer gives
+       * the one before back. The path is untrusted: check it where you read it.
+       */
+      openFile?(handler: (target: FileTarget) => void): Disposer;
+      /**
+       * A panel beside the task, in the reader's slot, which holds one thing at a time. `open(props)` shows `component`,
+       * or gives the open one new props; it gets `{ props, client, state, busy, full, onFull(full), onClose(),
+       * openFile(target), onMissing(), quiet }`. Its root takes the class `hh-reader`: quiet mode keeps only that one.
+       */
+      panel?(component: unknown): {
+          open(props?: unknown): void;
+          close(): void;
+      };
+      /**
+       * The task view's quiet mode: the chat and side panels hide while the reader's slot holds something, a turn's end
+       * neither takes the focus nor is read out, and leaving says what was held back. It also ends when the slot empties.
+       */
+      readonly taskView?: {
+          quiet(on: boolean): void;
+      };
+  }
+  /**
+   * A file to open. `agent` names who wrote it (a card), `timeline` asks for the document with its history shown,
+   * `historyOnly` for the history alone (a file that is not a `.md`, or was deleted).
+   */
+  interface FileTarget {
+      path: string;
+      anchor?: string;
+      agent?: string;
+      timeline?: boolean;
+      historyOnly?: boolean;
   }
   /** Where a mod's `row` goes. */
   type RowPlace = "models" | "usage";
@@ -993,6 +1053,8 @@ declare module "@humanharness/ui/_internal/src/layout/app" {
       };
   }
   export const AppProvider: import("react").Provider<AppValue | null>;
+  /** The app when there is one: a task view drawn on its own (a setup step, a test) has none. */
+  export const useOptionalApp: () => AppValue | null;
   /** The app, for the layout and its blocks. */
   export function useApp(): AppValue;
 }
@@ -1114,6 +1176,37 @@ declare module "@humanharness/ui/_internal/src/layout/registry" {
       };
       title: string;
   }
+  /**
+   * A file the task view opens: a `.md` link, a card, a History link, `client.openDocument` and the rest. `agent` names
+   * who wrote it (a card), `timeline` asks for the document with its history shown, `historyOnly` for the history alone
+   * (a file that is not a `.md`, or was deleted).
+   */
+  export interface FileTarget {
+      path: string;
+      anchor?: string;
+      agent?: string;
+      timeline?: boolean;
+      historyOnly?: boolean;
+  }
+  /** What a mod's panel in the reader's slot gets: what it was opened with, and the task view's side of the slot. */
+  export interface PanelProps {
+      /** What `open(props)` was last given. */
+      props: unknown;
+      client: HarnessClient;
+      state: AppState;
+      /** A turn runs, or the task is saving its note. */
+      busy: boolean;
+      /** The panel takes the whole body. */
+      full: boolean;
+      onFull(full: boolean): void;
+      onClose(): void;
+      /** Opens a file the way the chat does. */
+      openFile(target: FileTarget): void;
+      /** A file the chat has a card for is gone: the chat checks its cards again. */
+      onMissing(): void;
+      /** The task view is quiet (`taskView.quiet`). */
+      quiet: boolean;
+  }
   /** What each slot holds, by kind; each entry names the mod that registered it. */
   export interface Slots {
       settingsTab: {
@@ -1147,10 +1240,29 @@ declare module "@humanharness/ui/_internal/src/layout/registry" {
           title: string;
           Page: ComponentType<TaskPageProps>;
       };
+      /** What opens files; the last one counts. */
+      opener: {
+          mod: string;
+          open(target: FileTarget): void;
+      };
+      /** The panel open in the reader's slot (one at a time). */
+      openPanel: {
+          mod: string;
+          Component: ComponentType<PanelProps>;
+          props: unknown;
+          close(): void;
+      };
+      /** Holds the task view quiet while it is there. */
+      quiet: {
+          mod: string;
+          end(): void;
+      };
   }
   export type SlotKind = keyof Slots;
   /** The blocks mods registered, by mod id and block name, and the parts they put in the core's slots. */
   export interface BlockRegistry {
+      /** With no `opener` registered, the chat opens files itself (its own reader). */
+      readonly coreOpener: boolean;
       /** Registers `Component` as `modId`'s block `name`; the disposer takes it away again (only if it is still that one). */
       register(modId: string, name: string, Component: BlockComponent): () => void;
       get(modId: string, name: string): BlockComponent | undefined;
@@ -1163,7 +1275,9 @@ declare module "@humanharness/ui/_internal/src/layout/registry" {
       /** A number that changes on each change (for `useSyncExternalStore`). */
       version(): number;
   }
-  export function createBlockRegistry(): BlockRegistry;
+  export function createBlockRegistry({ coreOpener }?: {
+      coreOpener?: boolean;
+  }): BlockRegistry;
   /** The app's own registry: the one the screen uses unless a `ModBlocksProvider` gives another. */
   export const appRegistry: BlockRegistry;
   /** Registers a block in the app's registry; returns the disposer. */

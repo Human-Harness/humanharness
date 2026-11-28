@@ -1,4 +1,5 @@
 import { fileURLToPath } from "node:url";
+import type { AgentToolDefinition } from "./agent-tools";
 
 /** How to start a Node process that runs TypeScript (tsx in development; Electron's Node in plan 2). */
 export interface Launcher {
@@ -27,8 +28,8 @@ export function electronLauncher(electronPath: string): Launcher {
 export function uiServerSpec(opts: {
   harnessConfig: string;
   bridge: { path: string; token: string };
-  /** The review tools' channel (review spec §4). Absent: no review tools (D0). */
-  review?: { path: string; token: string };
+  /** The caller's tools and the channel that answers them. Absent: none (D0). */
+  tools?: { definitions: readonly AgentToolDefinition[]; rpc: { path: string; token: string } };
   launcher: Launcher;
   /** Built entry for the ui server (app); defaults to the TS source (dev). */
   entry?: string;
@@ -43,7 +44,7 @@ export function uiServerSpec(opts: {
       HH_HARNESS: opts.harnessConfig,
       HH_BRIDGE: opts.bridge.path,
       HH_BRIDGE_TOKEN: opts.bridge.token,
-      ...(opts.review ? { HH_REVIEW_RPC: opts.review.path, HH_REVIEW_RPC_TOKEN: opts.review.token } : {}),
+      ...(opts.tools ? { HH_TOOLS_RPC: opts.tools.rpc.path, HH_TOOLS_RPC_TOKEN: opts.tools.rpc.token, HH_TOOLS_RPC_DEFS: JSON.stringify(opts.tools.definitions) } : {}),
     },
   };
 }

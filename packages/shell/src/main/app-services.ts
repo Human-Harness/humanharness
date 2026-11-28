@@ -4,16 +4,13 @@ import { getEngine } from "@humanharness/engines";
 import { type LoadedHarness, dataCollections } from "@humanharness/harness-sdk";
 import type { ConfiguredApp, ScopesView } from "@humanharness/protocol";
 import type { CoreApp } from "@humanharness/mod-sdk/core";
-import type { PushChannel } from "@humanharness/protocol/channels";
-import { APP_SCOPE, type History, MAIN_SCOPE, loadReview, notesPrefix, readNotes } from "@humanharness/workspace";
+import { APP_SCOPE, type History, MAIN_SCOPE, notesPrefix, readNotes } from "@humanharness/workspace";
 import type { DataStore, ScopeStore } from "@humanharness/workspace";
 import type { ConfigStore } from "./config";
+import { commitAnnouncer } from "./commit-announcer";
 import { dataWriteQueue, harnessUiDataRequests, personDataRequests } from "./data-requests";
-import { workerDiff } from "./diff-runner";
 import type { EngineIpc } from "./engine-config/engine-ipc";
 import type { EngineGuards } from "./engine-guards";
-import { commitAnnouncer } from "./file-ipc";
-import { FileTimelineService } from "./file-timeline";
 import { historyView } from "./history-view";
 import { holds } from "./holds";
 import type { JobsHost } from "./jobs/jobs-host";
@@ -23,7 +20,6 @@ import { ProfileSwitch } from "./profile-switch";
 import type { Profiles } from "./profiles";
 import type { ResolvedReference } from "./references";
 import { RestoreGuard } from "./restore-guard";
-import { ReviewService } from "./reviews";
 import { createCoreEvents } from "./mods/core-events";
 import type { ModHost } from "./mods/host";
 import { revealIfStillSafe } from "./open-path";
@@ -34,7 +30,6 @@ import type { TaskManager } from "./task-manager";
 export interface AppServicesDeps {
   harness(): LoadedHarness;
   config(): ConfigStore;
-  here: string;
   guards: EngineGuards;
   quitting(): boolean;
   moving(): Promise<unknown> | null;
@@ -45,10 +40,6 @@ export interface AppServicesDeps {
     | "finish"
     | "chatScope"
     | "trailerNow"
-    | "runningTask"
-    | "whenSettled"
-    | "reviewRound"
-    | "documentApproved"
     | "contextRecord"
     | "addContext"
     | "view"
@@ -67,7 +58,7 @@ export interface AppServicesDeps {
   /** The mods' own stores (`ctx.stores`): whether a mod has one named `name`, and that store in `base`. Absent: none. */
   modStores?: { has(name: string): boolean; storeFor(base: string, name: string): DataStore | undefined };
   /** The mod host, told after a restore (core mods' `onRefresh`). Absent or null: no mods (D0). */
-  modHost?(): (Pick<ModHost, "refresh"> & Partial<Pick<ModHost, "dataChanged" | "restored" | "baseGone">>) | null;
+  modHost?(): (Pick<ModHost, "refresh"> & Partial<Pick<ModHost, "dataChanged" | "restored" | "baseGone" | "historyCommit" | "folderChanged">>) | null;
   scopeStoreFor(base: string): ScopeStore;
   scopesView(): Promise<ScopesView>;
   currentHistory(): Promise<History | null>;
@@ -76,10 +67,9 @@ export interface AppServicesDeps {
   closeRuntime(): Promise<void>;
   arrivedInProfile(): Promise<void>;
   workReferences(c: ConfiguredApp, base: string): Promise<ResolvedReference[]>;
-  sendToWindow(channel: PushChannel, value: unknown): void;
 }
 
-/** The services behind the IPC handlers: holds, restores, profile switches, data requests, reviews, timelines, context, search. */
+/** The services behind the IPC handlers: holds, restores, profile switches, data requests, context, search. */
 export function createAppServices(d: AppServicesDeps) {
   const {
     validConfig,
@@ -95,7 +85,6 @@ export function createAppServices(d: AppServicesDeps) {
     closeRuntime,
     arrivedInProfile,
     workReferences,
-    sendToWindow,
   } = d;
 
   /**
@@ -172,47 +161,6 @@ export function createAppServices(d: AppServicesDeps) {
   /** The same handler for the harness UI, which only reads `settings` (it changes them through `client.settings`) and never a mod's own collection. */
   const harnessUiData = harnessUiDataRequests(personData, () => d.harness().settings !== undefined, ownStore);
 
-  /** Document reviews (review spec): the person's side, and the agent's tools for each runtime's folder (one set of locks). */
-  const reviews = new ReviewService({
-    base: async () => {
-      const c = await validConfig();
-      return c ? baseOf(c) : null;
-    },
-    history: () => currentHistory(),
-    trailer: () => d.tasks().trailerNow(),
-    openTask: async () => {
-      const t = await d.tasks().runningTask();
-      return t ? { id: t.id, scope: t.scope } : null;
-    },
-    busy: () => d.tasks().isBusy(),
-    whenSettled: (write) => d.tasks().whenSettled(write),
-    blocked: () => (d.quitting() ? "The app is closing" : turnBlocked()),
-    // The canonical path and the record's scope; rejects with `RoundNotStarted` when no turn started.
-    round: (r) => d.tasks().reviewRound(r),
-    approved: (a) => void d.tasks().documentApproved(a).catch((err: unknown) => console.error("Could not act on the approval", err)),
-    reviewTier: (kind) => {
-      const kinds = d.harness().documents?.kinds;
-      return (kind !== undefined && kinds && Object.hasOwn(kinds, kind) ? kinds[kind].reviewTier : undefined) ?? "standard";
-    },
-    changed: (p) => sendToWindow("hh:reviewChanged", p),
-  });
-
-  /** File timelines (file-timeline spec): read from the history; a one-file go-back goes through the restore guard. */
-  const fileTimelines = new FileTimelineService({
-    base: async () => {
-      const c = await validConfig();
-      return c ? baseOf(c) : null;
-    },
-    history: () => currentHistory(),
-    actionLabel: (id) => (id === null ? "A question" : Object.hasOwn(d.harness().actions, id) ? d.harness().actions[id].label : id),
-    approvals: async (base, doc) => (await loadReview(base, doc).catch(() => null))?.approvals ?? [],
-    busy: () => d.quitting() || d.tasks().isBusy() || turnBlocked() !== null,
-    restore: (run) => restoreWith(run),
-    restored: () => afterRestore(),
-    // Diffs run in a worker thread of their own: jsdiff's budget and the Markdown parse never block Electron main.
-    diff: workerDiff({ entry: path.join(d.here, "diff-worker.js") }),
-  });
-
   /** What search finds among the tasks, read when the palette opens (search spec §4.2): actions, the open task, past tasks. */
   async function searchTasks(): ReturnType<CoreApp["search"]["tasks"]> {
     const scopeOf = (s: string | undefined) => (scoped() ? (s ?? APP_SCOPE) : MAIN_SCOPE);
@@ -260,13 +208,14 @@ export function createAppServices(d: AppServicesDeps) {
     plugins: () => d.pluginsCtl() ?? null,
   };
 
-  /** Tells the window which paths each commit touched: an open timeline gets its new entry (§6.3 `onChange`). */
+  /** Passes on which paths each commit touched (null: too many to list). */
   const commitAnnouncements = commitAnnouncer((paths) => {
-    sendToWindow("hh:fileCommits", paths);
     // A commit that touched a scope's engine folder: its Engine config section reads it again (enginePresets only).
     d.engineIpc()?.committed(paths);
     // Search (D0): the commit's paths go out as `restored`; the search service (and a core mod) read them again.
     events.restored(paths);
+    // And as the commit it is: `restored` also fires on a restore. The documents mod pushes it to the window.
+    events.historyCommit(paths);
   });
   const announceCommits = (history: History) => commitAnnouncements.watch(history);
 
@@ -280,8 +229,6 @@ export function createAppServices(d: AppServicesDeps) {
     dataWrites,
     personData,
     harnessUiData,
-    reviews,
-    fileTimelines,
     search,
     events,
     commitAnnouncements,

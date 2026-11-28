@@ -1,4 +1,5 @@
 import { promises as fs } from "node:fs";
+import { builtinModules } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { MAIN_SHARED_MODULES } from "@humanharness/mod-sdk/bundle";
@@ -61,11 +62,26 @@ describe("core mods' main in the built app", () => {
   });
 });
 
+describe("the documents mod in the built app", () => {
+  // What a core mod's built main leaves outside is found beside the app, and a packaged app carries only the shell's
+  // production dependencies (cli's package-config).
+  it("every npm package its main imports is one of the app's dependencies", async () => {
+    const repo = path.resolve(__dirname, "../../..");
+    await buildCoreMods(path.join(repo, "mods"), tmp, ["documents"]);
+    const built = await fs.readFile(path.join(tmp, "documents", "main.js"), "utf8");
+    const specs = [...built.matchAll(/^(?:import|export)\s[^;]*?from\s*"([^"]+)";|^import\s*"([^"]+)";/gm)].map((m) => m[1] ?? m[2]);
+    const outside = [...new Set(specs.filter((s) => !s.startsWith("node:") && !builtinModules.includes(s) && !s.startsWith(".")))].sort();
+    expect(outside).toEqual(["diff", "remark-gfm", "remark-parse", "unified"]);
+    const app = JSON.parse(await fs.readFile(path.join(repo, "shell/package.json"), "utf8")) as { dependencies: Record<string, string> };
+    expect(outside.filter((s) => !(s in app.dependencies))).toEqual([]);
+  }, 60000);
+});
+
 describe("the core does not import a core mod", () => {
   const repo = path.resolve(import.meta.dirname, "../../..");
   const PACKAGES = ["shell", "protocol", "runtime", "workspace", "harness-sdk", "ui"];
   /** The one exception: the window draws Home from its static ui import (minimal-core 0b1). */
-  const ALLOWED = new Set(["shell/src/renderer/main.tsx → @humanharness/mod-home", "shell/src/renderer/main.tsx → @humanharness/mod-history-view", "shell/src/renderer/main.tsx → @humanharness/mod-sidekick", "shell/src/renderer/main.tsx → @humanharness/mod-usage", "shell/src/renderer/main.tsx → @humanharness/mod-context-panel", "shell/src/renderer/main.tsx → @humanharness/mod-search"]);
+  const ALLOWED = new Set(["shell/src/renderer/main.tsx → @humanharness/mod-home", "shell/src/renderer/main.tsx → @humanharness/mod-history-view", "shell/src/renderer/main.tsx → @humanharness/mod-sidekick", "shell/src/renderer/main.tsx → @humanharness/mod-usage", "shell/src/renderer/main.tsx → @humanharness/mod-context-panel", "shell/src/renderer/main.tsx → @humanharness/mod-search", "shell/src/renderer/main.tsx → @humanharness/mod-documents"]);
   const IMPORT = /(?:from\s+|import\s*\(\s*|import\s+|require\s*\(\s*)["'](@humanharness\/mod-[a-z0-9-]+)/g;
 
   async function sources(dir: string): Promise<string[]> {

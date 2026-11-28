@@ -68,7 +68,7 @@ async function setup(jobs: Record<string, unknown>, extra: { subagents?: boolean
     data: async () => ({ records: [], total: 0 }),
     tools: { catalogue, request: async () => null },
     material: { request: async () => null },
-    review: async () => null,
+    agentTools: AGENT_TOOLS,
     references: [{ label: "Docs", path: "/opt/docs" }],
     ...(extra.seen ? { registry: { ...appRegistry, adapter: appRegistry.adapter.bind(appRegistry), commandLine: appRegistry.commandLine.bind(appRegistry), createTransport: (e: Parameters<typeof appRegistry.createTransport>[0], o: CommonOptions) => { extra.seen!.push(o); return appRegistry.createTransport(e, o); } } as typeof appRegistry } : {}),
   });
@@ -81,6 +81,9 @@ async function setup(jobs: Record<string, unknown>, extra: { subagents?: boolean
   return { ws, run };
 }
 
+/** A caller's tool, so a task slot opens the tools channel. */
+const AGENT_TOOLS = { definitions: [{ name: "ping", description: "Pings.", inputSchema: { type: "object", properties: {} } }], handle: async () => null };
+
 describe("a step slot (tools spec §7.1, R1)", () => {
   it("its MCP list is the ui server alone, with HH_STEP=<job> and HH_JOB empty", async () => {
     const { ws, run } = await setup({ triage: RECIPE });
@@ -91,13 +94,13 @@ describe("a step slot (tools spec §7.1, R1)", () => {
     expect(servers.ui.env.HH_JOB).toBe("");
   });
 
-  it("no data, material, review or tools server and no harness MCP server, even when the harness has them", async () => {
+  it("no data, material, caller's tool or tools server and no harness MCP server, even when the harness has them", async () => {
     const { ws, run } = await setup({ triage: RECIPE });
     // The task slot shows the harness has them all.
     await (await ws.openSlot({ key: "t1" })).send("x", () => {}).done;
     const t = run();
     expect(Object.keys(t.servers)).toEqual(["ui", "data", "tools", "material", "study", "study-2"]);
-    expect(Object.hasOwn(t.servers.ui.env, "HH_REVIEW_RPC")).toBe(true);
+    expect(Object.hasOwn(t.servers.ui.env, "HH_TOOLS_RPC")).toBe(true);
 
     const openRpc = vi.mocked(blocks.openRpc);
     openRpc.mockClear();
@@ -106,7 +109,7 @@ describe("a step slot (tools spec §7.1, R1)", () => {
     expect(openRpc).not.toHaveBeenCalled();
     const s = run();
     expect(Object.keys(s.servers)).toEqual(["ui"]);
-    expect(Object.keys(s.servers.ui.env).filter((k) => k.startsWith("HH_REVIEW"))).toEqual([]);
+    expect(Object.keys(s.servers.ui.env).filter((k) => k.startsWith("HH_TOOLS_RPC"))).toEqual([]);
   });
 
   it("permissions are edit none, exec false, web false, whatever the harness allows", async () => {
